@@ -11,7 +11,7 @@ import { createPresenceStore } from "@/server/realtime/store";
 import { decodeClient, encode, type ServerMessage } from "@/server/realtime/protocol";
 import { shortAddress, strangerLabel } from "@/lib/utils";
 
-const PORT = Number(process.env.WS_PORT ?? 3001);
+const PORT = Number(process.env.PORT ?? process.env.WS_PORT ?? 3001);
 const ALLOW_GUEST = process.env.ALLOW_GUEST_WS === "1";
 
 interface Conn {

@@ -8,15 +8,29 @@ import { Card, CardBody } from "@/components/ui/card";
 import { SearchingAnimation } from "@/components/matchmaking/SearchingAnimation";
 import { cn } from "@/lib/utils";
 
-/**
- * Phase 1 interactive shell with local-only state.
- * Phase 3 replaces `onFind` with the real WS matchmaking hook.
- */
-export function MatchmakingPanel() {
+export interface FindOpts {
+  mode: ChatMode;
+  identity: "anonymous" | "wallet";
+  interests: string[];
+}
+
+/** Setup panel. Server is authoritative — Find only emits q.join. */
+export function MatchmakingPanel({
+  searching,
+  gated,
+  wsDown,
+  onFind,
+  onStop,
+}: {
+  searching: boolean;
+  gated: boolean;
+  wsDown: boolean;
+  onFind: (opts: FindOpts) => void;
+  onStop: () => void;
+}) {
   const [mode, setMode] = React.useState<ChatMode>("text");
   const [identity, setIdentity] = React.useState<"anonymous" | "wallet">("anonymous");
   const [picked, setPicked] = React.useState<string[]>(["random"]);
-  const [searching, setSearching] = React.useState(false);
 
   const toggle = (i: string) =>
     setPicked((p) => (p.includes(i) ? p.filter((x) => x !== i) : [...p, i]));
@@ -66,6 +80,9 @@ export function MatchmakingPanel() {
               </button>
             ))}
           </div>
+          {mode !== "text" ? (
+            <p className="mt-1 text-xs text-slate-500">Audio/video media arrives in Phase 5 — matching works now.</p>
+          ) : null}
         </div>
 
         <div>
@@ -86,16 +103,24 @@ export function MatchmakingPanel() {
           </div>
         </div>
 
+        {wsDown ? (
+          <p role="alert" className="rounded-xl border border-red-500/20 bg-red-500/5 p-3 text-sm text-red-200">
+            Realtime server unreachable. Start it with <code>npm run ws</code>, then retry.
+          </p>
+        ) : null}
+
         {searching ? (
-          <SearchingAnimation onCancel={() => setSearching(false)} />
+          <SearchingAnimation onCancel={onStop} />
         ) : (
           <Button
             data-testid="find-stranger"
             className="w-full"
             size="lg"
-            onClick={() => setSearching(true)}
+            disabled={gated || wsDown}
+            title={gated ? "Connect wallet and sign in first" : undefined}
+            onClick={() => onFind({ mode, identity, interests: picked })}
           >
-            Find Stranger
+            {gated ? "Sign in to find a stranger" : "Find Stranger"}
           </Button>
         )}
         <p className="text-center text-xs text-slate-500">

@@ -1,22 +1,50 @@
 "use client";
 
+import * as React from "react";
 import { Button } from "@/components/ui/button";
 
-/** Shell — Phase 4 wires WS send + rate limits. */
-export function ChatInput({ disabled = true }: { disabled?: boolean }) {
+/** Live input: sends via WS, notifies typing with debounce. */
+export function ChatInput({
+  disabled = false,
+  onSend,
+  onTyping,
+}: {
+  disabled?: boolean;
+  onSend: (text: string) => void;
+  onTyping?: (on: boolean) => void;
+}) {
+  const [value, setValue] = React.useState("");
+  const stopTimer = React.useRef<number | null>(null);
+
+  const type = (v: string) => {
+    setValue(v);
+    onTyping?.(true);
+    if (stopTimer.current) window.clearTimeout(stopTimer.current);
+    stopTimer.current = window.setTimeout(() => onTyping?.(false), 1500);
+  };
+
   return (
     <form
       className="flex gap-2"
-      onSubmit={(e) => e.preventDefault()}
-      aria-label="Chat input (coming soon)"
+      aria-label="Chat input"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (!value.trim()) return;
+        onSend(value);
+        setValue("");
+        onTyping?.(false);
+      }}
     >
       <input
-        className="h-11 flex-1 rounded-full border border-white/10 bg-black/30 px-4 text-sm placeholder:text-slate-500"
-        placeholder={disabled ? "Chat unlocks with a match (Phase 4)…" : "Say hi…"}
+        value={value}
+        onChange={(e) => type(e.target.value.slice(0, 500))}
+        className="h-11 flex-1 rounded-full border border-white/10 bg-black/30 px-4 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-violet-400/60"
+        placeholder={disabled ? "Connecting…" : "Say hi…"}
         disabled={disabled}
         aria-label="Message"
+        maxLength={500}
       />
-      <Button type="submit" disabled={disabled}>Send</Button>
+      <Button type="submit" disabled={disabled || !value.trim()}>Send</Button>
     </form>
   );
 }

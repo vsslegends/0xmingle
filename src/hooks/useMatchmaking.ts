@@ -1,0 +1,134 @@
+"use client";
+
+import * as React from "react";
+import { RealtimeClient, wsUrl, type Status } from "@/lib/ws-client";
+import type { ChatMode as Mode } from "@/lib/interests";
+
+export type MatchState =
+  | { kind: "idle" }
+  | { kind: "searching" }
+  | { kind: "connected"; sid: string; peer: string; mode: Mode };
+
+export interface ChatMessage {
+  from: string;
+  text: string;
+  at: number;
+  mine: boolean;
+}
+
+interface JoinOpts {
+  mode: Mode;
+  identity: "anonymous" | "wallet";
+  interests: string[];
+}
+
+/**
+ * Owns one RealtimeClient per mount. Server is authoritative:
+ * every state change comes from a server frame.
+ */
+export function useMatchmaking() {
+  const [status, setStatus] = React.useState<Status>("idle");
+  const [state, setState] = React.useState<MatchState>({ kind: "idle" });
+  const [messages, setMessages] = React.useState<ChatMessage[]>([]);
+  const [peerTyping, setPeerTyping] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+  const clientRef = React.useRef<RealtimeClient | null>(null);
+  const lastJoin = React.useRef<JoinOpts | null>(null);
+
+  React.useEffect(() => {
+    const client = new RealtimeClient(wsUrl(), setStatus);
+    clientRef.current = client;
+    const offs = [
+      client.on("q.searching", () => {
+        setError(null);
+        setState({ kind: "searching" });
+      }),
+      client.on("session.matched", (p) => {
+        const { sid, peer, mode } = p as { sid: string; peer: string; mode: Mode };
+        setMessages([]);
+        setPeerTyping(false);
+        setError(null);
+        setState({ kind: "connected", sid, peer, mode });
+      }),
+      client.on("session.ended", (p) => {
+        const { reason } = p as { reason: string };
+        if (reason === "you-left" || reason === "blocked" || reason === "reported") {
+          setState({ kind: "idle" });
+        } else {
+          setState({ kind: "idle" });
+          setError(
+            reason === "peer-next"
+              ? "Stranger pressed Next."
+              : reason === "peer-disconnected"
+                ? "Stranger disconnected."
+                : "Conversation ended.",
+          );
+        }
+        setPeerTyping(false);
+      }),
+      client.on("chat.msg", (p) => {
+        const { from, text, at } = p as { from: string; text: string; at: number };
+        setMessages((m) => [...m.slice(-99), { from, text, at, mine: false }]);
+      }),
+      client.on("chat.typing", (p) => {
+        setPeerTyping((p as { on: boolean }).on);
+      }),
+      client.on("error", (p) => {
+        setError((p as { message: string }).message ?? "Something went wrong.");
+      }),
+    ];
+    client.connect();
+    return () => {
+      offs.forEach((off) => off());
+      client.disconnect();
+      clientRef.current = null;
+    };
+  }, []);
+
+  const find = React.useCallback((opts: JoinOpts) => {
+    lastJoin.current = opts;
+    setError(null);
+    setMessages([]);
+    setState({ kind: "searching" });
+    clientRef.current?.send("q.join", opts);
+  }, []);
+
+  const stop = React.useCallback(() => {
+    clientRef.current?.send("q.leave");
+    clientRef.current?.send("session.end");
+    setState({ kind: "idle" });
+  }, []);
+
+  const next = React.useCallback(() => {
+    setMessages([]);
+    setPeerTyping(false);
+    setState({ kind: "searching" });
+    clientRef.current?.send("session.next");
+  }, []);
+
+  const sendText = React.useCallback(
+    (text: string) => {
+      const clean = text.trim();
+      if (!clean || state.kind !== "connected") return;
+      clientRef.current?.send("chat.send", { text: clean.slice(0, 500) });
+      setMessages((m) => [...m.slice(-99), { from: "You", text: clean.slice(0, 500), at: Date.now(), mine: true }]);
+    },
+    [state.kind],
+  );
+
+  const setTyping = React.useCallback((on: boolean) => {
+    clientRef.current?.send("chat.typing", { on });
+  }, []);
+
+  const block = React.useCallback(() => {
+    clientRef.current?.send("peer.block");
+  }, []);
+
+  const report = React.useCallback((category: string, detail?: string) => {
+    clientRef.current?.send("peer.report", { category, detail });
+  }, []);
+
+  return { status, state, messages, peerTyping, error, find, stop, next, sendText, setTyping, block, report };
+}
+
+export type Matchmaking = ReturnType<typeof useMatchmaking>;

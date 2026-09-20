@@ -7,7 +7,7 @@ import type { ChatMode as Mode } from "@/lib/interests";
 export type MatchState =
   | { kind: "idle" }
   | { kind: "searching" }
-  | { kind: "connected"; sid: string; peer: string; mode: Mode; initiator: boolean };
+  | { kind: "connected"; sid: string; peer: string; mode: Mode; initiator: boolean; peerAddress: string | null };
 
 export interface ChatFile {
   name: string;
@@ -54,16 +54,22 @@ export function useMatchmaking() {
         setState({ kind: "searching" });
       }),
       client.on("session.matched", (p) => {
-        const { sid, peer, mode, initiator } = p as {
+        const { sid, peer, mode, initiator, peerAddress } = p as {
           sid: string;
           peer: string;
           mode: Mode;
           initiator: boolean;
+          peerAddress?: unknown;
         };
         setMessages([]);
         setPeerTyping(false);
         setError(null);
-        setState({ kind: "connected", sid, peer, mode, initiator: initiator === true });
+        // Only accept a well-formed address; anonymous peers send null.
+        const addr =
+          typeof peerAddress === "string" && /^0x[0-9a-fA-F]{40}$/.test(peerAddress)
+            ? peerAddress.toLowerCase()
+            : null;
+        setState({ kind: "connected", sid, peer, mode, initiator: initiator === true, peerAddress: addr });
       }),
       client.on("session.ended", (p) => {
         const { reason } = p as { reason: string };

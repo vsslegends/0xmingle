@@ -31,7 +31,7 @@ export type ClientMessage = z.infer<typeof clientMessageSchema>;
 
 export type ServerMessage =
   | { t: "q.searching" }
-  | { t: "session.matched"; p: { sid: string; peer: string; mode: string; initiator: boolean } }
+  | { t: "session.matched"; p: { sid: string; peer: string; mode: string; initiator: boolean; peerAddress?: string | null } }
   | { t: "session.ended"; p: { sid: string; reason: string } }
   | { t: "chat.msg"; p: { sid: string; from: string; text: string; at: number } }
   | { t: "chat.file"; p: { sid: string; from: string; name: string; mime: string; size: number; dataUrl: string; at: number } }

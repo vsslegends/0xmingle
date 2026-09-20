@@ -2,12 +2,14 @@
 
 import * as React from "react";
 import dynamic from "next/dynamic";
+import { Gift } from "lucide-react";
 import { Card, CardBody } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ChatInput, TypingIndicator } from "@/components/chat/ChatInput";
 import { Message } from "@/components/chat/Message";
 import { NextButton, BlockButton } from "@/components/chat/Controls";
 import { ReportModal } from "@/components/ReportModal";
+import { TipModal } from "@/components/TipModal";
 import type { Matchmaking } from "@/hooks/useMatchmaking";
 
 const VideoRoom = dynamic(
@@ -18,6 +20,7 @@ const VideoRoom = dynamic(
 /** Live conversation view: ephemeral messages, typing, Next/Stop/Block/Report. */
 export function SessionView({ mm }: { mm: Matchmaking }) {
   const [reportOpen, setReportOpen] = React.useState(false);
+  const [tipOpen, setTipOpen] = React.useState(false);
   const bottomRef = React.useRef<HTMLDivElement>(null);
   const msgCount = mm.state.kind === "connected" ? mm.messages.length : 0;
 
@@ -26,7 +29,7 @@ export function SessionView({ mm }: { mm: Matchmaking }) {
   }, [msgCount]);
 
   if (mm.state.kind !== "connected") return null;
-  const { sid, peer, mode, initiator } = mm.state;
+  const { sid, peer, mode, initiator, peerAddress } = mm.state;
 
   return (
     <Card>
@@ -37,6 +40,17 @@ export function SessionView({ mm }: { mm: Matchmaking }) {
             <p className="text-xs text-emerald-300">● connected · {mode} · {sid}</p>
           </div>
           <div className="flex gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setTipOpen(true)}
+              disabled={!peerAddress}
+              title={peerAddress ? "Send an ETH tip to this stranger" : "Tips need a wallet-mode peer — this stranger is anonymous"}
+              data-testid="tip-button"
+            >
+              <Gift size={14} />
+              Tip
+            </Button>
             <Button variant="secondary" size="sm" onClick={() => setReportOpen(true)}>
               Report
             </Button>
@@ -80,6 +94,12 @@ export function SessionView({ mm }: { mm: Matchmaking }) {
         </div>
 
         <ReportModal open={reportOpen} onClose={() => setReportOpen(false)} onReport={mm.report} />
+        <TipModal
+          open={tipOpen}
+          onClose={() => setTipOpen(false)}
+          recipient={peerAddress ?? undefined}
+          onSent={(amt) => mm.sendText(`\u{1F496} Tipped ${amt} ETH`)}
+        />
       </CardBody>
     </Card>
   );

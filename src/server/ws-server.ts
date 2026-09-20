@@ -47,6 +47,16 @@ function displayName(c: Conn): string {
   return c.identity === "anonymous" ? strangerLabel(anonNumber(c.address)) : shortAddress(c.address);
 }
 
+/**
+ * Peer address eligible for tipping. Only revealed when the peer chose a
+ * non-anonymous identity (wallet/profile). Anonymous peers stay hidden and
+ * the client disables the Tip button. Never logged.
+ */
+function tipAddress(c: Conn | undefined): string | null {
+  if (!c || c.identity === "anonymous") return null;
+  return /^0x[0-9a-fA-F]{40}$/.test(c.address) ? c.address.toLowerCase() : null;
+}
+
 function send(c: Conn, msg: ServerMessage): void {
   if (c.ws.readyState === WebSocket.OPEN) c.ws.send(encode(msg));
 }
@@ -193,11 +203,11 @@ function handle(conn: Conn, t: string, p: unknown): void {
       const peerId = session.a === conn.id ? session.b : session.a;
       const peer = conns.get(peerId);
       if (peer) {
-        send(peer, { t: "session.matched", p: { sid: session.id, peer: displayName(conn), mode: session.mode, initiator: true } });
+        send(peer, { t: "session.matched", p: { sid: session.id, peer: displayName(conn), mode: session.mode, initiator: true, peerAddress: tipAddress(conn) } });
       }
       send(conn, {
         t: "session.matched",
-        p: { sid: session.id, peer: peer ? displayName(peer) : "Stranger", mode: session.mode, initiator: false },
+        p: { sid: session.id, peer: peer ? displayName(peer) : "Stranger", mode: session.mode, initiator: false, peerAddress: tipAddress(peer) },
       });
       return;
     }
@@ -293,11 +303,11 @@ function handle(conn: Conn, t: string, p: unknown): void {
           metrics.matches += 1;
           const peer = conns.get(matched.a === conn.id ? matched.b : matched.a);
           if (peer) {
-            send(peer, { t: "session.matched", p: { sid: matched.id, peer: displayName(conn), mode: matched.mode, initiator: true } });
+            send(peer, { t: "session.matched", p: { sid: matched.id, peer: displayName(conn), mode: matched.mode, initiator: true, peerAddress: tipAddress(conn) } });
           }
           send(conn, {
             t: "session.matched",
-            p: { sid: matched.id, peer: peer ? displayName(peer) : "Stranger", mode: matched.mode, initiator: false },
+            p: { sid: matched.id, peer: peer ? displayName(peer) : "Stranger", mode: matched.mode, initiator: false, peerAddress: tipAddress(peer) },
           });
         }
       }

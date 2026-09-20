@@ -1,6 +1,8 @@
 "use client";
 
 import * as React from "react";
+import { useDisconnect } from "wagmi";
+import { LogOut } from "lucide-react";
 import { Card, CardBody } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,6 +14,8 @@ import { shortAddress } from "@/lib/utils";
 
 export default function ProfilePage() {
   const session = useSession();
+  const { disconnectAsync } = useDisconnect();
+  const [leaving, setLeaving] = React.useState(false);
   const { profile, loading, saving, save } = useProfile();
   const [form, setForm] = React.useState({
     username: "",
@@ -53,6 +57,23 @@ export default function ProfilePage() {
     }));
   };
 
+  const logout = async () => {
+    setLeaving(true);
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } catch {
+      /* cookie clear is best-effort; wallet disconnect still applies */
+    }
+    try {
+      await disconnectAsync();
+    } catch {
+      /* already disconnected */
+    } finally {
+      session.refresh();
+      setLeaving(false);
+    }
+  };
+
   return (
     <div className="mx-auto max-w-2xl px-4 py-10 sm:px-6">
       <div className="flex items-center gap-3">
@@ -60,6 +81,19 @@ export default function ProfilePage() {
           {form.username ? `@${form.username}` : shortAddress(session.address ?? "")}
         </h1>
         <TrustBadge tier="new" />
+        <span className="ml-auto">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => void logout()}
+            disabled={leaving}
+            data-testid="disconnect-button"
+            title="Sign out and disconnect your wallet"
+          >
+            <LogOut size={16} />
+            {leaving ? "Leaving…" : "Disconnect"}
+          </Button>
+        </span>
       </div>
       <p className="mt-1 text-sm text-slate-500">{shortAddress(session.address ?? "")} · {profile ? `${profile.conversations} conversations · ${profile.peopleMet} people met` : loading ? "Loading…" : "New here — say hi to a stranger."}</p>
 

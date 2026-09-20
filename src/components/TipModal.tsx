@@ -18,20 +18,26 @@ export function TipModal({
   open,
   onClose,
   recipient,
+  onSent,
 }: {
   open: boolean;
   onClose: () => void;
   recipient?: string;
+  /** Called once per confirmed tx with the ETH amount string. */
+  onSent?: (amountEth: string) => void;
 }) {
   const { isConnected } = useAccount();
   const chainId = useChainId();
-  const { sendTransaction, isPending, error } = useSendTransaction();
+  const { sendTransaction, data: txHash, isPending, error, reset } = useSendTransaction();
   const [amount, setAmount] = React.useState<string>(TIP_PRESETS_ETH[0]);
   const [quote, setQuote] = React.useState<{ feeWei: string; recipientWei: string; feeBps: number } | null>(null);
+  const sentFor = React.useRef<string | null>(null);
 
   React.useEffect(() => {
     if (!open) return;
     setQuote(null);
+    sentFor.current = null;
+    reset();
     let cancelled = false;
     void (async () => {
       try {
@@ -59,6 +65,15 @@ export function TipModal({
     if (!tx) return;
     sendTransaction({ to: tx.to, value: tx.value });
   };
+
+  // Announce once per confirmed tx, then close. Rejection keeps the modal open.
+  React.useEffect(() => {
+    if (open && txHash && sentFor.current !== txHash) {
+      sentFor.current = txHash;
+      onSent?.(amount);
+      onClose();
+    }
+  }, [open, txHash, amount, onSent, onClose]);
 
   return (
     <Modal open={open} onClose={onClose} label="Send a tip">

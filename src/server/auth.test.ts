@@ -3,8 +3,10 @@ import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import {
   __testOnly,
   buildAuthMessage,
+  createWsTicket,
   issueChallenge,
   verifyChallenge,
+  verifyWsTicket,
   createSessionToken,
   readSessionToken,
 } from "@/server/auth";
@@ -72,5 +74,23 @@ describe("auth challenges", () => {
     const session = await readSessionToken(token);
     expect(session?.address).toBe(ADDR_A.address.toLowerCase());
     expect(await readSessionToken("garbage")).toBeNull();
+  });
+
+  it("ws tickets round-trip", async () => {
+    process.env.SESSION_SECRET = "test-secret-32-chars-minimum-here!!";
+    const ticket = await createWsTicket(ADDR_A.address);
+    const verified = await verifyWsTicket(ticket);
+    expect(verified?.address).toBe(ADDR_A.address.toLowerCase());
+  });
+
+  it("ws tickets reject tampered, garbage, and wrong-purpose tokens", async () => {
+    process.env.SESSION_SECRET = "test-secret-32-chars-minimum-here!!";
+    const ticket = await createWsTicket(ADDR_A.address);
+    expect(await verifyWsTicket(ticket.slice(0, -2) + "xx")).toBeNull();
+    expect(await verifyWsTicket("garbage")).toBeNull();
+    expect(await verifyWsTicket(null)).toBeNull();
+    // A session token is valid JWT but must not pass as a WS ticket.
+    const sessionToken = await createSessionToken(ADDR_A.address);
+    expect(await verifyWsTicket(sessionToken)).toBeNull();
   });
 });

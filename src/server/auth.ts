@@ -141,5 +141,37 @@ export function clearSessionCookie(): string {
   return `${SESSION_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`;
 }
 
+const WS_TICKET_TTL_S = 120; // 2 minutes: covers handshake + socket reconnects
+
+/**
+ * Short-lived signed WS ticket. Lets the realtime gateway verify identity
+ * when it runs on a different host than the web app (browsers don't send
+ * the HttpOnly session cookie cross-origin). Self-contained JWT — no shared
+ * state, so it works across serverless instances and separate hosts.
+ * Requires the same SESSION_SECRET on web + gateway.
+ */
+export async function createWsTicket(address: string): Promise<string> {
+  return new SignJWT({ address: address.toLowerCase(), purpose: "ws-ticket" })
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt()
+    .setExpirationTime(`${WS_TICKET_TTL_S}s`)
+    .sign(getSecret());
+}
+
+export async function verifyWsTicket(
+  ticket: string | undefined | null,
+): Promise<{ address: string } | null> {
+  if (!ticket || ticket.length > 2000) return null;
+  try {
+    const { payload } = await jwtVerify(ticket, getSecret());
+    const { address, purpose } = payload as { address?: unknown; purpose?: unknown };
+    if (purpose !== "ws-ticket") return null;
+    if (typeof address !== "string" || !/^0x[0-9a-f]{40}$/.test(address)) return null;
+    return { address };
+  } catch {
+    return null;
+  }
+}
+
 /** Test hook — not exported to clients. */
 export const __testOnly = { challenges };

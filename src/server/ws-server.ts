@@ -5,7 +5,7 @@
  * Messages are relayed ephemerally — never stored, never logged.
  */
 import { WebSocketServer, WebSocket } from "ws";
-import { SESSION_COOKIE, readSessionToken } from "@/server/auth";
+import { SESSION_COOKIE, readSessionToken, verifyWsTicket } from "@/server/auth";
 import { Matchmaker, type Mode } from "@/server/realtime/matcher";
 import { createPresenceStore } from "@/server/realtime/store";
 import { decodeClient, encode, type ServerMessage } from "@/server/realtime/protocol";
@@ -71,18 +71,62 @@ function checkRate(c: Conn, limit: number, windowMs: number): boolean {
 const wss = new WebSocketServer({ port: PORT });
 
 wss.on("connection", (ws: WebSocket, req) => {
+  // Attach the frame handler synchronously: a client may send its first
+  // frame in onopen, before async auth below finishes. Buffer until authed
+  // (bounded; dropped on auth failure) so fast first frames are never lost.
+  let conn: Conn | null = null;
+  const pending: string[] = [];
+  const dispatch = (raw: string): void => {
+    const c = conn;
+    if (!c) return;
+    const msg = decodeClient(raw);
+    if (!msg) {
+      send(c, { t: "error", p: { code: "BAD_MESSAGE", message: "Invalid message." } });
+      return;
+    }
+    handle(c, msg.t, (msg as { p?: unknown }).p);
+  };
+  ws.on("message", (data) => {
+    const raw = String(data);
+    if (!conn) {
+      if (pending.length < 20) pending.push(raw);
+      return;
+    }
+    dispatch(raw);
+  });
+  ws.on("close", () => {
+    if (!conn) return;
+    const id = conn.id;
+    conns.delete(id);
+    void presence.setOffline(conn.address, id);
+    matchmaker.leave(id);
+    const ended = matchmaker.end(id, "ENDED");
+    if (ended) {
+      const peerId = ended.a === id ? ended.b : ended.a;
+      const peer = conns.get(peerId);
+      if (peer) send(peer, { t: "session.ended", p: { sid: ended.id, reason: "peer-disconnected" } });
+    }
+  });
   void (async () => {
     const cookies = parseCookies(req.headers.cookie);
     let address: string | null = null;
     const session = await readSessionToken(cookies[SESSION_COOKIE]);
     if (session) {
       address = session.address;
-    } else if (ALLOW_GUEST) {
+    } else {
+      // Cross-host gateway: browsers don't send the web app's HttpOnly
+      // cookie, so accept a short-lived signed ticket (?ticket=) minted by
+      // /api/ws-ticket. Same SESSION_SECRET required on web + gateway.
       const url = new URL(req.url ?? "/", "http://localhost");
-      const guest = url.searchParams.get("guest") ?? "";
-      if (/^0x[0-9a-fA-F]{40}$/.test(guest)) {
-        address = guest.toLowerCase();
-        console.warn("[ws] guest bypass active (dev only)");
+      const verified = await verifyWsTicket(url.searchParams.get("ticket"));
+      if (verified) {
+        address = verified.address;
+      } else if (ALLOW_GUEST) {
+        const guest = url.searchParams.get("guest") ?? "";
+        if (/^0x[0-9a-fA-F]{40}$/.test(guest)) {
+          address = guest.toLowerCase();
+          console.warn("[ws] guest bypass active (dev only)");
+        }
       }
     }
     if (!address) {
@@ -97,7 +141,7 @@ wss.on("connection", (ws: WebSocket, req) => {
       return;
     }
 
-    const conn: Conn = {
+    conn = {
       id: `c_${++connSeq}_${Date.now().toString(36)}`,
       address,
       ws,
@@ -113,29 +157,9 @@ wss.on("connection", (ws: WebSocket, req) => {
     void presence.setOnline(address, conn.id);
 
     ws.on("pong", () => {
-      conn.alive = true;
+      if (conn) conn.alive = true;
     });
-
-    ws.on("message", (data) => {
-      const msg = decodeClient(String(data));
-      if (!msg) {
-        send(conn, { t: "error", p: { code: "BAD_MESSAGE", message: "Invalid message." } });
-        return;
-      }
-      handle(conn, msg.t, (msg as { p?: unknown }).p);
-    });
-
-    ws.on("close", () => {
-      conns.delete(conn.id);
-      void presence.setOffline(conn.address, conn.id);
-      matchmaker.leave(conn.id);
-      const ended = matchmaker.end(conn.id, "ENDED");
-      if (ended) {
-        const peerId = ended.a === conn.id ? ended.b : ended.a;
-        const peer = conns.get(peerId);
-        if (peer) send(peer, { t: "session.ended", p: { sid: ended.id, reason: "peer-disconnected" } });
-      }
-    });
+    pending.splice(0).forEach(dispatch);
   })();
 });
 

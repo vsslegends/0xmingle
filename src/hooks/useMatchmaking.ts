@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { RealtimeClient, wsUrl, type Status } from "@/lib/ws-client";
+import { RealtimeClient, wsUrlWithTicket, type Status } from "@/lib/ws-client";
 import type { ChatMode as Mode } from "@/lib/interests";
 
 export type MatchState =
@@ -46,7 +46,7 @@ export function useMatchmaking() {
   const lastJoin = React.useRef<JoinOpts | null>(null);
 
   React.useEffect(() => {
-    const client = new RealtimeClient(wsUrl(), setStatus);
+    const client = new RealtimeClient(wsUrlWithTicket, setStatus);
     clientRef.current = client;
     const offs = [
       client.on("q.searching", () => {

@@ -22,6 +22,22 @@ export function buildTipTx(recipient: string, amountWei: bigint): TipTx | null {
   return { to: recipient as Hex, value: amountWei };
 }
 
+/** Enforcing splitter contract address (unset until deployed). */
+export function tipContractAddress(): Hex | null {
+  const raw = (process.env.NEXT_PUBLIC_TIP_CONTRACT ?? "").trim();
+  return /^0x[0-9a-fA-F]{40}$/.test(raw) ? (raw.toLowerCase() as Hex) : null;
+}
+
+export const TIP_SPLITTER_ABI = [
+  {
+    name: "tip",
+    type: "function",
+    stateMutability: "payable",
+    inputs: [{ name: "recipient", type: "address" }],
+    outputs: [],
+  },
+] as const;
+
 /**
  * USD → wei at the given ETH/USD price. Exact BigInt math (cents × 1e18 ÷
  * price-cents, floored). Returns null below the $0.10 minimum or on bad input.

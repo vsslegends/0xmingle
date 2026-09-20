@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { quoteTip } from "@/server/economy/fees";
+import { platformTreasury, quoteTip } from "@/server/economy/fees";
 
 const schema = z.object({ amountWei: z.string().regex(/^\d+$/, "wei integer expected") });
 
@@ -21,6 +21,7 @@ export async function POST(req: NextRequest) {
       feeWei: q.feeWei.toString(),
       recipientWei: q.recipientWei.toString(),
       feeBps: q.feeBps,
+      treasury: platformTreasury(),
     });
   } catch {
     return NextResponse.json({ error: "Amount must be positive." }, { status: 400 });

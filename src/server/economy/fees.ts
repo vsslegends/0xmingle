@@ -8,6 +8,15 @@ export function platformFeeBps(): number {
   return Math.floor(raw);
 }
 
+/**
+ * Fee destination wallet. Validated; null when unset/malformed — in which
+ * case fee collection must stay disabled (quote-only, no enforcement).
+ */
+export function platformTreasury(): string | null {
+  const raw = (process.env.PLATFORM_TREASURY ?? "").trim();
+  return /^0x[0-9a-fA-F]{40}$/.test(raw) ? raw.toLowerCase() : null;
+}
+
 export interface TipQuote {
   amountWei: bigint;
   feeWei: bigint;

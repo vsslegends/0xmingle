@@ -32,7 +32,7 @@ export const tipService = {
       body: JSON.stringify({ amountWei }),
     });
     if (!r.ok) throw new Error("Quote failed");
-    return (await r.json()) as { amountWei: string; feeWei: string; recipientWei: string; feeBps: number };
+    return (await r.json()) as { amountWei: string; feeWei: string; recipientWei: string; feeBps: number; treasury: string | null };
   },
 } as const;
 

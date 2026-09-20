@@ -1,12 +1,12 @@
 "use client";
 
 import * as React from "react";
-import { formatEther } from "viem";
+import { formatEther, encodeFunctionData, type Hex } from "viem";
 import { useSendTransaction, useAccount, useChainId } from "wagmi";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { TIP_PRESETS_ETH, TIP_PRESETS_USD, parseTipAmount, usdToWei, buildTipTx } from "@/lib/tips";
+import { TIP_PRESETS_ETH, TIP_PRESETS_USD, TIP_SPLITTER_ABI, parseTipAmount, tipContractAddress, usdToWei, buildTipTx } from "@/lib/tips";
 import { fetchEthUsd } from "@/lib/eth-price";
 import { tipService } from "@/lib/services";
 
@@ -46,8 +46,10 @@ export function TipModal({
   const [currency, setCurrency] = React.useState<Currency>("USD");
   const [amount, setAmount] = React.useState<string>(TIP_PRESETS_USD[0]);
   const [price, setPrice] = React.useState<number | null | undefined>(undefined);
-  const [quote, setQuote] = React.useState<{ feeWei: string; recipientWei: string; feeBps: number } | null>(null);
+  const [quote, setQuote] = React.useState<{ feeWei: string; recipientWei: string; feeBps: number; treasury: string | null } | null>(null);
   const sentFor = React.useRef<string | null>(null);
+  // Enforcing splitter when deployed; otherwise legacy direct transfer.
+  const splitter = React.useMemo(() => tipContractAddress(), []);
 
   const presets = currency === "USD" ? TIP_PRESETS_USD : TIP_PRESETS_ETH;
 
@@ -102,6 +104,14 @@ export function TipModal({
       return;
     }
     if (!recipient) return;
+    if (splitter) {
+      sendTransaction({
+        to: splitter,
+        data: encodeFunctionData({ abi: TIP_SPLITTER_ABI, functionName: "tip", args: [recipient as Hex] }),
+        value: amountWei,
+      });
+      return;
+    }
     const tx = buildTipTx(recipient, amountWei);
     if (!tx) return;
     sendTransaction({ to: tx.to, value: tx.value });
@@ -171,6 +181,13 @@ export function TipModal({
           </div>
           <div className="flex justify-between"><dt>Platform fee ({(quote.feeBps / 100).toFixed(1)}%)</dt><dd>{formatEther(BigInt(quote.feeWei))} ETH</dd></div>
           <div className="flex justify-between"><dt>Network</dt><dd>chain {chainId}</dd></div>
+          <div className="flex justify-between">
+            <dt>Route</dt>
+            <dd>{splitter ? "splitter · fee enforced on-chain" : "direct · fee activates with splitter"}</dd>
+          </div>
+          {quote.treasury ? (
+            <div className="flex justify-between"><dt>Fee to</dt><dd>{quote.treasury.slice(0, 6)}…{quote.treasury.slice(-4)}</dd></div>
+          ) : null}
         </dl>
       )}
       {error && mode === "send" && <p role="alert" className="mt-2 text-xs text-red-300">{error.message}</p>}

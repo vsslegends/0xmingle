@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildTipTx, parseTipAmount, usdToWei } from "@/lib/tips";
+import { buildTipTx, parseTipAmount, tipContractAddress, usdToWei } from "@/lib/tips";
 
 const ADDR = "0x1234567890123456789012345678901234567890";
 
@@ -31,5 +31,16 @@ describe("tips", () => {
     expect(usdToWei("1.234", 3000)).toBeNull();
     expect(usdToWei("1", 0)).toBeNull();
     expect(usdToWei("1", NaN)).toBeNull();
+  });
+
+  it("reads the splitter address only when well-formed", () => {
+    const prev = process.env.NEXT_PUBLIC_TIP_CONTRACT;
+    process.env.NEXT_PUBLIC_TIP_CONTRACT = "0xC2F0FF0f2928fc53E0e4e7B4Cf166BdC563C243b";
+    expect(tipContractAddress()).toBe("0xc2f0ff0f2928fc53e0e4e7b4cf166bdc563c243b");
+    process.env.NEXT_PUBLIC_TIP_CONTRACT = "0x123";
+    expect(tipContractAddress()).toBeNull();
+    delete process.env.NEXT_PUBLIC_TIP_CONTRACT;
+    expect(tipContractAddress()).toBeNull();
+    if (prev !== undefined) process.env.NEXT_PUBLIC_TIP_CONTRACT = prev;
   });
 });

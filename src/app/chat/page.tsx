@@ -1,4 +1,5 @@
 import { MatchmakingPanel } from "@/components/matchmaking/MatchmakingPanel";
+import { AuthStatus } from "@/components/AuthStatus";
 import { Card, CardBody } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/states";
 
@@ -8,7 +9,10 @@ export default function ChatPage() {
   return (
     <div className="mx-auto grid max-w-6xl gap-4 px-4 py-8 sm:px-6 lg:grid-cols-[380px_1fr]">
       <div>
-        <h1 className="mb-4 text-2xl font-bold">Find a stranger</h1>
+        <h1 className="mb-2 text-2xl font-bold">Find a stranger</h1>
+        <div className="mb-4">
+          <AuthStatus />
+        </div>
         <MatchmakingPanel />
       </div>
       <Card>

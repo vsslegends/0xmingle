@@ -11,6 +11,12 @@ export const clientMessageSchema = z.discriminatedUnion("t", [
   z.object({ t: z.literal("q.leave") }),
   z.object({ t: z.literal("chat.send"), p: z.object({ text: z.string().min(1).max(500) }) }),
   z.object({ t: z.literal("chat.typing"), p: z.object({ on: z.boolean() }) }),
+  z.object({ t: z.literal("chat.file"), p: z.object({
+    name: z.string().min(1).max(120),
+    mime: z.enum(["image/png", "image/jpeg", "image/gif", "image/webp", "application/pdf", "text/plain"]),
+    size: z.number().int().min(1).max(5_000_000),
+    dataUrl: z.string().min(1).max(2_000_000).regex(/^data:(image\/(png|jpeg|gif|webp)|application\/pdf|text\/plain);base64,/),
+  }) }),
   z.object({ t: z.literal("session.next") }),
   z.object({ t: z.literal("session.end") }),
   z.object({ t: z.literal("peer.block") }),
@@ -28,6 +34,7 @@ export type ServerMessage =
   | { t: "session.matched"; p: { sid: string; peer: string; mode: string; initiator: boolean } }
   | { t: "session.ended"; p: { sid: string; reason: string } }
   | { t: "chat.msg"; p: { sid: string; from: string; text: string; at: number } }
+  | { t: "chat.file"; p: { sid: string; from: string; name: string; mime: string; size: number; dataUrl: string; at: number } }
   | { t: "chat.ack"; p: { sid: string; at: number } }
   | { t: "chat.typing"; p: { sid: string; on: boolean } }
   | { t: "rtc.signal"; p: { sid: string; data: unknown } }

@@ -9,11 +9,19 @@ export type MatchState =
   | { kind: "searching" }
   | { kind: "connected"; sid: string; peer: string; mode: Mode; initiator: boolean };
 
+export interface ChatFile {
+  name: string;
+  mime: string;
+  size: number;
+  dataUrl: string;
+}
+
 export interface ChatMessage {
   from: string;
   text: string;
   at: number;
   mine: boolean;
+  file?: ChatFile;
 }
 
 export type RtcSignal = { kind: string; [k: string]: unknown };
@@ -77,6 +85,12 @@ export function useMatchmaking() {
         const { from, text, at } = p as { from: string; text: string; at: number };
         setMessages((m) => [...m.slice(-99), { from, text, at, mine: false }]);
       }),
+      client.on("chat.file", (p) => {
+        const { from, name, mime, size, dataUrl, at } = p as {
+          from: string; name: string; mime: string; size: number; dataUrl: string; at: number;
+        };
+        setMessages((m) => [...m.slice(-99), { from, text: "", at, mine: false, file: { name, mime, size, dataUrl } }]);
+      }),
       client.on("chat.typing", (p) => {
         setPeerTyping((p as { on: boolean }).on);
       }),
@@ -127,6 +141,15 @@ export function useMatchmaking() {
     clientRef.current?.send("chat.typing", { on });
   }, []);
 
+  const sendFile = React.useCallback(
+    (file: ChatFile) => {
+      if (state.kind !== "connected") return;
+      clientRef.current?.send("chat.file", file);
+      setMessages((m) => [...m.slice(-99), { from: "You", text: "", at: Date.now(), mine: true, file }]);
+    },
+    [state.kind],
+  );
+
   const block = React.useCallback(() => {
     clientRef.current?.send("peer.block");
   }, []);
@@ -147,7 +170,7 @@ export function useMatchmaking() {
     });
   }, []);
 
-  return { status, state, messages, peerTyping, error, find, stop, next, sendText, setTyping, block, report, rtcSend, onRtc };
+  return { status, state, messages, peerTyping, error, find, stop, next, sendText, sendFile, setTyping, block, report, rtcSend, onRtc };
 }
 
 export type Matchmaking = ReturnType<typeof useMatchmaking>;

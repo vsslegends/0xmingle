@@ -19,4 +19,16 @@ describe("protocol", () => {
     const raw = encode({ t: "q.searching" });
     expect(JSON.parse(raw)).toMatchObject({ v: 1, t: "q.searching" });
   });
+
+  it("accepts chat.file with allowlisted mime, rejects the rest", () => {
+    const good = {
+      t: "chat.file",
+      p: { name: "pic.png", mime: "image/png", size: 100, dataUrl: "data:image/png;base64,iVBORw0=" },
+    };
+    expect(decodeClient(JSON.stringify(good))).not.toBeNull();
+    const badMime = { ...good, p: { ...good.p, mime: "image/svg+xml", dataUrl: "data:image/svg+xml;base64,xxx" } };
+    expect(decodeClient(JSON.stringify(badMime))).toBeNull();
+    const huge = { ...good, p: { ...good.p, dataUrl: `data:image/png;base64,${"A".repeat(2_000_001)}` } };
+    expect(decodeClient(JSON.stringify(huge))).toBeNull();
+  });
 });

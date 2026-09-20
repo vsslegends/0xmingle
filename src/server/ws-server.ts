@@ -23,6 +23,7 @@ interface Conn {
   interests: string[];
   alive: boolean;
   msgAt: number[];
+  fileAt: number[];
   sessionsStarted: number[];
 }
 
@@ -103,9 +104,10 @@ wss.on("connection", (ws: WebSocket, req) => {
       identity: "anonymous",
       mode: "text",
       interests: [],
-      alive: true,
-      msgAt: [],
-      sessionsStarted: [],
+    alive: true,
+    msgAt: [],
+    fileAt: [],
+    sessionsStarted: [],
     };
     conns.set(conn.id, conn);
     void presence.setOnline(address, conn.id);
@@ -204,6 +206,30 @@ function handle(conn: Conn, t: string, p: unknown): void {
       if (!session) return;
       const peer = conns.get(matchmaker.peerOf(conn.id) ?? "");
       if (peer) send(peer, { t: "chat.typing", p: { sid: session.id, on: (p as { on: boolean }).on } });
+      return;
+    }
+    case "chat.file": {
+      const session = matchmaker.sessionOf(conn.id);
+      if (!session) {
+        send(conn, { t: "error", p: { code: "NO_SESSION", message: "No active conversation." } });
+        return;
+      }
+      // Heavier payloads: stricter rate limit. Contents never stored or logged.
+      const now = Date.now();
+      conn.fileAt = conn.fileAt.filter((t) => now - t < 30_000);
+      if (conn.fileAt.length >= 3) {
+        send(conn, { t: "error", p: { code: "RATE_LIMITED", message: "Sending files too fast. Slow down." } });
+        return;
+      }
+      conn.fileAt.push(now);
+      const { name, mime, size, dataUrl } = p as { name: string; mime: string; size: number; dataUrl: string };
+      const at = Date.now();
+      const peer = conns.get(matchmaker.peerOf(conn.id) ?? "");
+      if (peer) {
+        send(peer, { t: "chat.file", p: { sid: session.id, from: displayName(conn), name, mime, size, dataUrl, at } });
+      }
+      metrics.messages += 1;
+      send(conn, { t: "chat.ack", p: { sid: session.id, at } });
       return;
     }
     case "rtc.signal": {

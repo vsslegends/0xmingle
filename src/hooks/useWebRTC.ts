@@ -32,10 +32,13 @@ export function useWebRTC(opts: {
   const [state, setState] = React.useState<RtcState>("idle");
   const [muted, setMuted] = React.useState(false);
   const [camOff, setCamOff] = React.useState(false);
+  const [sharing, setSharing] = React.useState(false);
   const [devices, setDevices] = React.useState<MediaDevices>({ audio: [], video: [], speaker: [] });
   const [error, setError] = React.useState<string | null>(null);
   const pcRef = React.useRef<RTCPeerConnection | null>(null);
   const streamRef = React.useRef<MediaStream | null>(null);
+  const camTrackRef = React.useRef<MediaStreamTrack | null>(null);
+  const displayTrackRef = React.useRef<MediaStreamTrack | null>(null);
   const sendRef = React.useRef(sendSignal);
   sendRef.current = sendSignal;
 
@@ -141,6 +144,10 @@ export function useWebRTC(opts: {
 
     return () => {
       cancelled = true;
+      displayTrackRef.current?.stop();
+      displayTrackRef.current = null;
+      camTrackRef.current = null;
+      setSharing(false);
       try {
         pc?.getSenders().forEach((s) => s.track?.stop());
         pc?.close();
@@ -185,5 +192,53 @@ export function useWebRTC(opts: {
     }
   }, []);
 
-  return { localStream, remoteStream, state, muted, camOff, devices, error, toggleMute, toggleCam, restart };
+  /**
+   * TeamViewer-style screen share (video mode only). Swaps the camera track
+   * for the display track — same kind, no renegotiation needed. Stopping the
+   * OS share restores the camera automatically.
+   */
+  const stopShare = React.useCallback(async () => {
+    const pc = pcRef.current;
+    displayTrackRef.current?.stop();
+    displayTrackRef.current = null;
+    const cam = camTrackRef.current;
+    if (pc && cam && cam.readyState === "live") {
+      const sender = pc.getSenders().find((s) => s.track?.kind === "video");
+      try {
+        await sender?.replaceTrack(cam);
+      } catch {
+        /* non-fatal */
+      }
+    }
+    camTrackRef.current = null;
+    if (streamRef.current) setLocalStream(streamRef.current);
+    setSharing(false);
+  }, []);
+
+  const startShare = React.useCallback(async () => {
+    const pc = pcRef.current;
+    if (!pc || mode !== "video" || !streamRef.current) return;
+    try {
+      const display = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+      const [track] = display.getVideoTracks();
+      if (!track) return;
+      const sender = pc.getSenders().find((s) => s.track?.kind === "video");
+      if (!sender) {
+        track.stop();
+        return;
+      }
+      if (sender.track && sender.track !== displayTrackRef.current) camTrackRef.current = sender.track;
+      displayTrackRef.current = track;
+      await sender.replaceTrack(track);
+      setLocalStream(new MediaStream([track]));
+      setSharing(true);
+      track.onended = () => {
+        void stopShare();
+      };
+    } catch {
+      /* user cancelled the picker — silent */
+    }
+  }, [mode, stopShare]);
+
+  return { localStream, remoteStream, state, muted, camOff, sharing, devices, error, toggleMute, toggleCam, restart, startShare, stopShare };
 }

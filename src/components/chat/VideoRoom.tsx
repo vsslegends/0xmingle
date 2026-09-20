@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Mic, MicOff, Video, VideoOff, PhoneOff, RefreshCw } from "lucide-react";
+import { Mic, MicOff, Video, VideoOff, PhoneOff, RefreshCw, ScreenShare, ScreenShareOff } from "lucide-react";
 import { useWebRTC, type SignalData } from "@/hooks/useWebRTC";
 import type { RtcSignal } from "@/hooks/useMatchmaking";
 import { Button } from "@/components/ui/button";
@@ -109,6 +109,18 @@ export function VideoRoom({
             {rtc.camOff ? <VideoOff size={16} /> : <Video size={16} />}
           </Button>
         )}
+        {mode === "video" && (
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => void (rtc.sharing ? rtc.stopShare() : rtc.startShare())}
+            aria-pressed={rtc.sharing}
+            aria-label={rtc.sharing ? "Stop sharing screen" : "Share screen"}
+            title={rtc.sharing ? "Stop sharing screen" : "Share your screen"}
+          >
+            {rtc.sharing ? <ScreenShareOff size={16} /> : <ScreenShare size={16} />}
+          </Button>
+        )}
         {rtc.state === "failed" && (
           <Button variant="secondary" size="sm" onClick={rtc.restart}>
             <RefreshCw size={16} /> Reconnect
@@ -117,6 +129,9 @@ export function VideoRoom({
         <span className="inline-flex items-center gap-1 text-xs text-slate-500">
           <PhoneOff size={12} /> media is P2P — use Stop/Next below to leave
         </span>
+        {rtc.sharing ? (
+          <span className="text-xs font-medium text-amber-200" role="status">You&apos;re sharing your screen</span>
+        ) : null}
       </div>
 
       {rtc.error && (

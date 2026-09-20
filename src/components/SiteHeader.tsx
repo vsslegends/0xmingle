@@ -8,8 +8,10 @@ import { cn } from "@/lib/utils";
 import { WalletButton } from "@/components/WalletButton";
 
 const links = [
-  { href: "/chat", label: "Chat" },
-  { href: "/safety", label: "Safety" },
+  { href: "/", label: "Home" },
+  { href: "/chat", label: "Random" },
+  { href: "/explore", label: "Explore" },
+  { href: "/communities", label: "Communities" },
   { href: "/profile", label: "Profile" },
 ];
 

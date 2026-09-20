@@ -6,6 +6,7 @@ import { Card, CardBody } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { WalletButton } from "@/components/WalletButton";
 import { HeroVisual } from "@/components/landing/HeroVisual";
+import { Dashboard } from "@/components/home/Dashboard";
 
 export default function LandingPage() {
   return (
@@ -33,6 +34,7 @@ export default function LandingPage() {
           <p className="mt-4 text-xs text-slate-500">
             Basic chat is free. Connecting a wallet only verifies it&apos;s yours — no transaction, no jargon.
           </p>
+          <Dashboard />
         </div>
         <HeroVisual />
       </section>
@@ -110,17 +112,21 @@ export default function LandingPage() {
 
       {/* WEB3 QUIETLY */}
       <section className="py-10 pb-16" aria-label="Web3 features">
-        <h2 className="text-2xl font-bold sm:text-3xl">Ownership, quietly underneath.</h2>
+        <h2 className="text-2xl font-bold sm:text-3xl">Connect beyond your social graph.</h2>
         <p className="mt-2 max-w-xl text-slate-400">
-          Your wallet unlocks reputation, tips, and gated rooms — only when you want them.
+          Meet someone you&apos;ve never met. Your wallet quietly unlocks identity,
+          communities, creator rooms, and tips — only when you want them.
           Conversations themselves stay off-chain and private.
         </p>
-        <div className="mt-6">
+        <div className="mt-6 flex flex-wrap gap-3">
           <Link href="/chat">
             <Button size="lg">
               Find a stranger
               <ArrowRight size={16} />
             </Button>
+          </Link>
+          <Link href="/explore">
+            <Button size="lg" variant="secondary">Explore communities</Button>
           </Link>
         </div>
       </section>

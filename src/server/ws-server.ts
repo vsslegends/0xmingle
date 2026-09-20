@@ -235,6 +235,7 @@ function handle(conn: Conn, t: string, p: unknown): void {
           identity: conn.identity,
           interests: conn.interests,
           joinedAt: Date.now(),
+          strictRecent: true,
         });
         if (!matched) {
           send(conn, { t: "q.searching" });

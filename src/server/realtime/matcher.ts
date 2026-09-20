@@ -15,6 +15,8 @@ export interface Seeker {
   identity: "anonymous" | "wallet";
   interests: string[];
   joinedAt: number;
+  /** Set when requeued via NEXT: never fallback-match recent peers. */
+  strictRecent?: boolean;
 }
 
 export interface Session {
@@ -59,7 +61,11 @@ export class Matchmaker {
     this.blocks.add(pairKey(a.toLowerCase(), b.toLowerCase()));
   }
 
-  /** Join queue. Returns a new session on match, else null (SEARCHING). */
+  /**
+   * Join queue. Returns a new session on match, else null (SEARCHING).
+   * Fresh finds allow a recent-peer fallback (low population still connects),
+   * but only between two fresh seekers — a NEXT-er never gets forced back.
+   */
   join(seeker: Seeker): Session | null {
     this.leave(seeker.id); // idempotent: no duplicates
     const now = Date.now();
@@ -67,7 +73,9 @@ export class Matchmaker {
     this.recent.forEach((t, k) => {
       if (now - t > RECENT_WINDOW_MS) this.recent.delete(k);
     });
-    const candidate = this.pick(seeker, now);
+    const candidate =
+      this.pick(seeker, now, false) ??
+      (!seeker.strictRecent ? this.pick(seeker, now, true) : null);
     if (!candidate) {
       this.queue.push({ ...seeker, joinedAt: now });
       return null;
@@ -90,7 +98,7 @@ export class Matchmaker {
     return session;
   }
 
-  private pick(seeker: Seeker, now: number): Seeker | null {
+  private pick(seeker: Seeker, now: number, includeRecent: boolean): Seeker | null {
     const mine = new Set(seeker.interests.map((i) => i.toLowerCase()));
     let best: Seeker | null = null;
     let bestScore = -1;
@@ -100,8 +108,12 @@ export class Matchmaker {
       if (q.address.toLowerCase() === seeker.address.toLowerCase()) continue; // no self-match
       if (q.mode !== seeker.mode) continue;
       if (this.isBlocked(q.address, seeker.address)) continue;
-      const last = this.recent.get(pairKey(q.address.toLowerCase(), seeker.address.toLowerCase()));
-      if (last !== undefined && now - last < RECENT_WINDOW_MS) continue;
+      if (!includeRecent) {
+        const last = this.recent.get(pairKey(q.address.toLowerCase(), seeker.address.toLowerCase()));
+        if (last !== undefined && now - last < RECENT_WINDOW_MS) continue;
+      } else if (q.strictRecent) {
+        continue; // they pressed NEXT — don't pull them back
+      }
       let score = 0;
       for (const i of q.interests) {
         if (mine.has(i.toLowerCase())) score += 1;
@@ -143,10 +155,10 @@ export class Matchmaker {
     return s;
   }
 
-  /** NEXT: end current session and requeue with same prefs. */
+  /** NEXT: end current session and requeue with same prefs (strict: someone new). */
   next(connId: string, prefs: Omit<Seeker, "joinedAt">): { ended: Session | null; matched: Session | null } {
     const ended = this.end(connId, "ENDED");
-    const matched = this.join({ ...prefs, id: connId, joinedAt: Date.now() });
+    const matched = this.join({ ...prefs, id: connId, joinedAt: Date.now(), strictRecent: true });
     return { ended, matched };
   }
 }

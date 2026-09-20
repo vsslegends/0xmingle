@@ -84,6 +84,29 @@ describe("matchmaker", () => {
     expect(m.sessionOf("c1")).toBeUndefined();
   });
 
+  it("reconnects recent peers on fresh find (low-population fallback)", () => {
+    const m = new Matchmaker();
+    m.join(seeker("c1", "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+    m.join(seeker("c2", "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"));
+    m.end("c1"); // both stopped
+    m.join(seeker("c1", "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+    const s = m.join(seeker("c2", "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"));
+    expect(s).not.toBeNull();
+  });
+
+  it("prefers fresh peers over recent ones when both wait", () => {
+    const m = new Matchmaker();
+    m.join(seeker("c1", "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+    m.join(seeker("c2", "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"));
+    m.end("c1"); // c1+c2 are now a recent pair
+    m.join(seeker("c1", "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")); // c1 waits
+    m.join(seeker("c3", "0xcccccccccccccccccccccccccccccccccccccccc")); // c3 matches c1 (fresh)
+    const s = m.join(seeker("c2", "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"));
+    // c1 taken by c3; c2 alone → still searching, never force-blocked
+    expect(s).toBeNull();
+    expect(m.sessionOf("c1")?.b ?? m.sessionOf("c1")?.a).toBeDefined();
+  });
+
   it("prevents duplicate queue entries", () => {
     const m = new Matchmaker();
     m.join(seeker("c1", "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));

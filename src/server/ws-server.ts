@@ -24,6 +24,7 @@ interface Conn {
   alive: boolean;
   msgAt: number[];
   fileAt: number[];
+  tipAt: number[];
   sessionsStarted: number[];
 }
 
@@ -161,6 +162,7 @@ wss.on("connection", (ws: WebSocket, req) => {
     alive: true,
     msgAt: [],
     fileAt: [],
+    tipAt: [],
     sessionsStarted: [],
     };
     conns.set(conn.id, conn);
@@ -271,6 +273,52 @@ function handle(conn: Conn, t: string, p: unknown): void {
       if (!session) return;
       const peer = conns.get(matchmaker.peerOf(conn.id) ?? "");
       if (peer) send(peer, { t: "rtc.signal", p: { sid: session.id, data: (p as { data: unknown }).data } });
+      return;
+    }
+    case "tip.request": {
+      const session = matchmaker.sessionOf(conn.id);
+      if (!session) {
+        send(conn, { t: "error", p: { code: "NO_SESSION", message: "No active conversation." } });
+        return;
+      }
+      // Own rate bucket: max 3 tip requests per minute per connection.
+      const now = Date.now();
+      conn.tipAt = conn.tipAt.filter((t) => now - t < 60_000);
+      if (conn.tipAt.length >= 3) {
+        send(conn, { t: "error", p: { code: "RATE_LIMITED", message: "Too many tip requests. Slow down." } });
+        return;
+      }
+      conn.tipAt.push(now);
+      const { amountWei, display } = p as { amountWei: string; display: string };
+      const wei = BigInt(amountWei); // schema guarantees digits-only
+      if (wei <= 0n || wei > 1_000_000_000_000_000_000_000n) {
+        send(conn, { t: "error", p: { code: "BAD_AMOUNT", message: "Invalid tip amount." } });
+        return;
+      }
+      const peer = conns.get(matchmaker.peerOf(conn.id) ?? "");
+      if (peer) {
+        send(peer, { t: "tip.incoming", p: { sid: session.id, from: displayName(conn), amountWei, display } });
+      }
+      return;
+    }
+    case "tip.response": {
+      const session = matchmaker.sessionOf(conn.id);
+      if (!session) {
+        send(conn, { t: "error", p: { code: "NO_SESSION", message: "No active conversation." } });
+        return;
+      }
+      const { accepted } = p as { accepted: boolean };
+      const peer = conns.get(matchmaker.peerOf(conn.id) ?? "");
+      if (peer) {
+        // Server supplies the responder's own address — never trust client
+        // input. A decline reveals nothing.
+        send(peer, {
+          t: "tip.answer",
+          p: accepted
+            ? { sid: session.id, accepted: true, address: conn.address.toLowerCase() }
+            : { sid: session.id, accepted: false, address: null },
+        });
+      }
       return;
     }
     case "session.next":

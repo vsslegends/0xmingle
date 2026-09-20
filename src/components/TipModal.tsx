@@ -23,12 +23,22 @@ export function TipModal({
   onClose,
   recipient,
   onSent,
+  mode = "send",
+  onRequest,
+  initialAmount,
+  initialCurrency,
 }: {
   open: boolean;
   onClose: () => void;
   recipient?: string;
   /** Called once per confirmed tx with a display string like "$1.00" or "0.001 ETH". */
   onSent?: (display: string) => void;
+  /** "send": wallet transfer now. "request": ask an anonymous peer to accept first. */
+  mode?: "send" | "request";
+  /** Called in request mode with the wei amount + display string. */
+  onRequest?: (amountWei: string, display: string) => void;
+  initialAmount?: string;
+  initialCurrency?: Currency;
 }) {
   const { isConnected } = useAccount();
   const chainId = useChainId();
@@ -43,6 +53,8 @@ export function TipModal({
 
   React.useEffect(() => {
     if (!open) return;
+    if (initialCurrency) setCurrency(initialCurrency);
+    if (initialAmount) setAmount(initialAmount);
     setQuote(null);
     sentFor.current = null;
     reset();
@@ -50,7 +62,7 @@ export function TipModal({
     let cancelled = false;
     void fetchEthUsd().then((p) => { if (!cancelled) setPrice(p); });
     return () => { cancelled = true; };
-  }, [open, reset]);
+  }, [open, reset, initialAmount, initialCurrency]);
 
   const pickCurrency = (c: Currency) => {
     setCurrency(c);
@@ -83,7 +95,13 @@ export function TipModal({
   const display = currency === "USD" ? `$${amount}` : `${amount} ETH`;
 
   const confirm = () => {
-    if (!recipient || !amountWei) return;
+    if (!amountWei) return;
+    if (mode === "request") {
+      onRequest?.(amountWei.toString(), display);
+      onClose();
+      return;
+    }
+    if (!recipient) return;
     const tx = buildTipTx(recipient, amountWei);
     if (!tx) return;
     sendTransaction({ to: tx.to, value: tx.value });
@@ -109,11 +127,15 @@ export function TipModal({
       : "Any amount. No transaction happens until you confirm in your wallet.";
 
   return (
-    <Modal open={open} onClose={onClose} label="Send a tip">
-      <h2 className="text-lg font-bold">Send a tip</h2>
+    <Modal open={open} onClose={onClose} label={mode === "request" ? "Request a tip" : "Send a tip"}>
+      <h2 className="text-lg font-bold">{mode === "request" ? "Ask for a tip" : "Send a tip"}</h2>
       <p className="mt-1 text-sm text-slate-400">
-        {recipient ? <>To <span className="text-white">{recipient.slice(0, 6)}…{recipient.slice(-4)}</span> · </> : null}
-        No transaction happens until you confirm in your wallet.
+        {mode === "request" ? (
+          <>The stranger can accept (revealing their address for this one tip) or decline — nothing is shared unless they accept.</>
+        ) : (
+          <>{recipient ? <>To <span className="text-white">{recipient.slice(0, 6)}…{recipient.slice(-4)}</span> · </> : null}
+          No transaction happens until you confirm in your wallet.</>
+        )}
       </p>
       <div className="mt-3 flex gap-2" role="group" aria-label="Currency">
         {(["USD", "ETH"] as const).map((c) => (
@@ -151,13 +173,13 @@ export function TipModal({
           <div className="flex justify-between"><dt>Network</dt><dd>chain {chainId}</dd></div>
         </dl>
       )}
-      {error && <p role="alert" className="mt-2 text-xs text-red-300">{error.message}</p>}
+      {error && mode === "send" && <p role="alert" className="mt-2 text-xs text-red-300">{error.message}</p>}
       {!isConnected && <p className="mt-2 text-xs text-amber-200">Connect your wallet to tip.</p>}
-      {!recipient && <p className="mt-2 text-xs text-amber-200">This stranger is anonymous — tips need a wallet-mode peer.</p>}
+      {mode === "send" && !recipient && <p className="mt-2 text-xs text-amber-200">This stranger is anonymous — tips need a wallet-mode peer.</p>}
       <div className="mt-4 flex gap-2">
         <Button variant="secondary" onClick={onClose}>Cancel</Button>
-        <Button disabled={!valid || !isConnected || !recipient || isPending || priceMissing} onClick={confirm}>
-          {isPending ? "Confirm in wallet…" : `Confirm ${display} tip`}
+        <Button disabled={!valid || !isConnected || (mode === "send" && (!recipient || isPending)) || priceMissing} onClick={confirm}>
+          {mode === "request" ? `Ask for ${display}` : isPending ? "Confirm in wallet…" : `Confirm ${display} tip`}
         </Button>
       </div>
     </Modal>

@@ -31,4 +31,32 @@ describe("protocol", () => {
     const huge = { ...good, p: { ...good.p, dataUrl: `data:image/png;base64,${"A".repeat(2_000_001)}` } };
     expect(decodeClient(JSON.stringify(huge))).toBeNull();
   });
+
+  it("accepts tip.request/response, rejects malformed amounts", () => {
+    expect(
+      decodeClient(JSON.stringify({ t: "tip.request", p: { amountWei: "1000000", display: "$1.00" } })),
+    ).not.toBeNull();
+    expect(
+      decodeClient(JSON.stringify({ t: "tip.request", p: { amountWei: "-5", display: "$1" } })),
+    ).toBeNull();
+    expect(
+      decodeClient(JSON.stringify({ t: "tip.request", p: { amountWei: "1.5", display: "$1" } })),
+    ).toBeNull();
+    expect(
+      decodeClient(JSON.stringify({ t: "tip.request", p: { amountWei: "100", display: "x".repeat(25) } })),
+    ).toBeNull();
+    expect(
+      decodeClient(JSON.stringify({ t: "tip.response", p: { accepted: true } })),
+    ).not.toBeNull();
+    expect(
+      decodeClient(JSON.stringify({ t: "tip.response", p: { accepted: "yes" } })),
+    ).toBeNull();
+  });
+
+  it("encodes tip.incoming/answer envelopes with version", () => {
+    expect(JSON.parse(encode({ t: "tip.incoming", p: { sid: "s1", from: "Stranger", amountWei: "10", display: "$1" } })))
+      .toMatchObject({ v: 1, t: "tip.incoming" });
+    expect(JSON.parse(encode({ t: "tip.answer", p: { sid: "s1", accepted: true, address: "0xabc" } })))
+      .toMatchObject({ v: 1, t: "tip.answer" });
+  });
 });

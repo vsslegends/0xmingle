@@ -25,6 +25,11 @@ export const clientMessageSchema = z.discriminatedUnion("t", [
     detail: z.string().max(500).optional(),
   }) }),
   z.object({ t: z.literal("rtc.signal"), p: z.object({ data: z.unknown() }) }),
+  z.object({ t: z.literal("tip.request"), p: z.object({
+    amountWei: z.string().regex(/^\d{1,25}$/, "wei integer expected"),
+    display: z.string().min(1).max(24),
+  }) }),
+  z.object({ t: z.literal("tip.response"), p: z.object({ accepted: z.boolean() }) }),
 ]);
 
 export type ClientMessage = z.infer<typeof clientMessageSchema>;
@@ -38,6 +43,8 @@ export type ServerMessage =
   | { t: "chat.ack"; p: { sid: string; at: number } }
   | { t: "chat.typing"; p: { sid: string; on: boolean } }
   | { t: "rtc.signal"; p: { sid: string; data: unknown } }
+  | { t: "tip.incoming"; p: { sid: string; from: string; amountWei: string; display: string } }
+  | { t: "tip.answer"; p: { sid: string; accepted: boolean; address?: string | null } }
   | { t: "error"; p: { code: string; message: string } };
 
 export function encode(msg: ServerMessage): string {

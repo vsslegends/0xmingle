@@ -3,8 +3,10 @@
 import * as React from "react";
 import dynamic from "next/dynamic";
 import { Gift } from "lucide-react";
+import { formatEther } from "viem";
 import { Card, CardBody } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Modal } from "@/components/ui/modal";
 import { ChatInput, TypingIndicator } from "@/components/chat/ChatInput";
 import { Message } from "@/components/chat/Message";
 import { NextButton, BlockButton } from "@/components/chat/Controls";
@@ -20,7 +22,12 @@ const VideoRoom = dynamic(
 /** Live conversation view: ephemeral messages, typing, Next/Stop/Block/Report. */
 export function SessionView({ mm }: { mm: Matchmaking }) {
   const [reportOpen, setReportOpen] = React.useState(false);
-  const [tipOpen, setTipOpen] = React.useState(false);
+  const [tipFlow, setTipFlow] = React.useState<
+    | null
+    | { kind: "direct" }
+    | { kind: "request" }
+    | { kind: "accepted"; address: string; amountWei: string }
+  >(null);
   const bottomRef = React.useRef<HTMLDivElement>(null);
   const msgCount = mm.state.kind === "connected" ? mm.messages.length : 0;
 
@@ -28,8 +35,27 @@ export function SessionView({ mm }: { mm: Matchmaking }) {
     bottomRef.current?.scrollIntoView({ block: "end" });
   }, [msgCount]);
 
+  // Peer accepted our request → open the send modal prefilled with the amount.
+  React.useEffect(() => {
+    const o = mm.tipOutgoing;
+    if (o?.status === "accepted") {
+      setTipFlow({ kind: "accepted", address: o.address, amountWei: o.amountWei });
+    }
+  }, [mm.tipOutgoing]);
+
   if (mm.state.kind !== "connected") return null;
   const { sid, peer, mode, initiator, peerAddress } = mm.state;
+  const incoming = mm.tipIncoming;
+  const outgoing = mm.tipOutgoing;
+
+  const openTip = () => {
+    setTipFlow(peerAddress ? { kind: "direct" } : { kind: "request" });
+  };
+
+  const acceptedEth =
+    tipFlow?.kind === "accepted" && /^\d+$/.test(tipFlow.amountWei)
+      ? formatEther(BigInt(tipFlow.amountWei))
+      : undefined;
 
   return (
     <Card>
@@ -43,9 +69,8 @@ export function SessionView({ mm }: { mm: Matchmaking }) {
             <Button
               variant="secondary"
               size="sm"
-              onClick={() => setTipOpen(true)}
-              disabled={!peerAddress}
-              title={peerAddress ? "Send an ETH tip to this stranger" : "Tips need a wallet-mode peer — this stranger is anonymous"}
+              onClick={openTip}
+              title={peerAddress ? "Send an ETH tip to this stranger" : "Ask this stranger to accept a tip (they stay anonymous unless they accept)"}
               data-testid="tip-button"
             >
               <Gift size={14} />
@@ -57,6 +82,21 @@ export function SessionView({ mm }: { mm: Matchmaking }) {
             <BlockButton onBlock={mm.block} />
           </div>
         </div>
+        {outgoing?.status === "pending" ? (
+          <p className="text-xs text-slate-400" role="status">Tip request sent — waiting for the stranger…</p>
+        ) : null}
+        {outgoing?.status === "declined" ? (
+          <p className="text-xs text-slate-400" role="status">
+            Stranger declined the tip.{" "}
+            <button className="underline" onClick={() => mm.dismissTips()}>Dismiss</button>
+          </p>
+        ) : null}
+        {outgoing?.status === "expired" ? (
+          <p className="text-xs text-slate-400" role="status">
+            Tip request expired with no answer.{" "}
+            <button className="underline" onClick={() => mm.dismissTips()}>Dismiss</button>
+          </p>
+        ) : null}
 
         <div
           className="max-h-80 space-y-2 overflow-y-auto rounded-xl bg-black/30 p-4"
@@ -95,11 +135,40 @@ export function SessionView({ mm }: { mm: Matchmaking }) {
 
         <ReportModal open={reportOpen} onClose={() => setReportOpen(false)} onReport={mm.report} />
         <TipModal
-          open={tipOpen}
-          onClose={() => setTipOpen(false)}
+          open={tipFlow?.kind === "direct"}
+          onClose={() => setTipFlow(null)}
           recipient={peerAddress ?? undefined}
           onSent={(d) => mm.sendText(`\u{1F496} Tipped ${d}`)}
         />
+        <TipModal
+          open={tipFlow?.kind === "request"}
+          onClose={() => setTipFlow(null)}
+          mode="request"
+          onRequest={(wei, display) => {
+            mm.requestTip(wei, display);
+            setTipFlow(null);
+          }}
+        />
+        <TipModal
+          open={tipFlow?.kind === "accepted"}
+          onClose={() => { setTipFlow(null); mm.dismissTips(); }}
+          recipient={tipFlow?.kind === "accepted" ? tipFlow.address : undefined}
+          initialAmount={acceptedEth}
+          initialCurrency="ETH"
+          onSent={(d) => mm.sendText(`\u{1F496} Tipped ${d}`)}
+        />
+        <Modal open={incoming !== null} onClose={() => mm.respondTip(false)} label="Tip request">
+          <h2 className="text-lg font-bold">Someone wants to tip you</h2>
+          <p className="mt-1 text-sm text-slate-400">
+            <span className="text-white">{incoming?.from}</span> offers{" "}
+            <span className="font-semibold text-white">{incoming?.display}</span>.
+            Accepting reveals your wallet address for this one tip — nothing else.
+          </p>
+          <div className="mt-4 flex gap-2">
+            <Button variant="secondary" onClick={() => mm.respondTip(false)}>Decline</Button>
+            <Button onClick={() => mm.respondTip(true)}>Accept tip</Button>
+          </div>
+        </Modal>
       </CardBody>
     </Card>
   );

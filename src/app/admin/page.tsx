@@ -1,6 +1,6 @@
 import { Card, CardBody } from "@/components/ui/card";
 
-export const metadata = { title: "Admin — STRANGER" };
+export const metadata = { title: "Admin — 0xMingle" };
 
 const sections = [
   "users", "reports", "bans", "rooms", "communities",

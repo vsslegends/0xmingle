@@ -1,4 +1,4 @@
-export const metadata = { title: "Community Guidelines — STRANGER" };
+export const metadata = { title: "Community Guidelines — 0xMingle" };
 
 const rules = [
   "Be 18+.",

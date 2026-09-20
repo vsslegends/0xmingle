@@ -1,4 +1,4 @@
-export const metadata = { title: "Privacy — STRANGER" };
+export const metadata = { title: "Privacy — 0xMingle" };
 
 export default function PrivacyPage() {
   return (

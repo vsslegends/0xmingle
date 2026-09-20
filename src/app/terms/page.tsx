@@ -1,4 +1,4 @@
-export const metadata = { title: "Terms — STRANGER" };
+export const metadata = { title: "Terms — 0xMingle" };
 
 export default function TermsPage() {
   return (

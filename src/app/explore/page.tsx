@@ -15,7 +15,7 @@ function baseUrl(): string {
   return process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
 }
 
-export const metadata = { title: "Explore — STRANGER" };
+export const metadata = { title: "Explore — 0xMingle" };
 
 export default async function ExplorePage() {
   const rooms = await getRooms(baseUrl());

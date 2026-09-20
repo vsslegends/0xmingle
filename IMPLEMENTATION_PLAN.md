@@ -1,4 +1,4 @@
-# Implementation Plan — STRANGER MVP
+# Implementation Plan — 0xMingle MVP
 
 Phase 0 ✅: inspected /Users/sureshreddy — no parent git repo, no existing app. Scaffolded fresh `stranger/` (Next 14.2.5, TS, Tailwind, App Router, npm, node v24.15). No wallet/supabase/redis pre-existing.
 

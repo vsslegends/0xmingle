@@ -13,7 +13,7 @@ async function getRooms(): Promise<Room[]> {
   }
 }
 
-export const metadata = { title: "Communities — STRANGER" };
+export const metadata = { title: "Communities — 0xMingle" };
 
 export default async function CommunitiesPage() {
   const rooms = await getRooms();

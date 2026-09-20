@@ -1,6 +1,8 @@
 /** Brand config — change these values to rebrand. No other file should hard-code the product name. */
 export const brand = {
-  name: "STRANGER",
+  name: "0xMingle",
+  domain: "0xmingle.xyz",
+  url: "https://0xmingle.xyz",
   tagline: "Talk to someone you were never supposed to meet.",
   subhead:
     "Random conversations. Wallet-native identity. No follower counts required.",

@@ -1,7 +1,7 @@
-# AGENTS.md — STRANGER (brand-swappable random Web3 chat)
+# AGENTS.md — 0xMingle (brand-swappable random Web3 chat, 0xmingle.xyz)
 
 > Product: random 1:1 stranger chat (text/audio/video) where EVM wallet = identity.
-> Brand "STRANGER" is a placeholder. All user-visible brand strings live in `src/config/brand.ts`.
+> Brand "0xMingle" lives in `src/config/brand.ts` — all user-visible brand strings come from there.
 
 ## Architecture (do not put realtime media on-chain)
 

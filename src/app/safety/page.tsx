@@ -1,6 +1,6 @@
 import { Card, CardBody } from "@/components/ui/card";
 
-export const metadata = { title: "Safety — STRANGER" };
+export const metadata = { title: "Safety — 0xMingle" };
 
 const items = [
   ["Report in one tap", "Harassment, sexual content, hate, spam, scams, impersonation, illegal content. The other person never learns who reported."],

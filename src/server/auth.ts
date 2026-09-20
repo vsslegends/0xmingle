@@ -2,9 +2,10 @@ import { randomBytes } from "crypto";
 import { SignJWT, jwtVerify } from "jose";
 import { verifyMessage, type Hex } from "viem";
 import { z } from "zod";
+import { brand } from "@/config/brand";
 import { getActiveChainId } from "@/lib/chain";
 
-export const SESSION_COOKIE = "stranger_session";
+export const SESSION_COOKIE = "oxmingle_session";
 const SESSION_TTL_S = 60 * 60 * 24 * 7; // 7 days
 const CHALLENGE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
@@ -44,7 +45,7 @@ export function buildAuthMessage(input: {
   expiresAt: string;
 }): string {
   return [
-    "STRANGER — verify wallet ownership",
+    `${brand.name} — verify wallet ownership`,
     "",
     `Address: ${input.address}`,
     `Chain ID: ${input.chainId}`,

@@ -98,7 +98,7 @@ export function SessionView({ mm }: { mm: Matchmaking }) {
           open={tipOpen}
           onClose={() => setTipOpen(false)}
           recipient={peerAddress ?? undefined}
-          onSent={(amt) => mm.sendText(`\u{1F496} Tipped ${amt} ETH`)}
+          onSent={(d) => mm.sendText(`\u{1F496} Tipped ${d}`)}
         />
       </CardBody>
     </Card>

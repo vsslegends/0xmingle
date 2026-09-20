@@ -17,12 +17,15 @@ export interface ChatFile {
 }
 
 export interface ChatMessage {
+  id: string;
   from: string;
   text: string;
   at: number;
   mine: boolean;
   file?: ChatFile;
 }
+
+export type ReactionMap = Record<string, Record<string, { count: number; mine: boolean }>>;
 
 export type RtcSignal = { kind: string; [k: string]: unknown };
 
@@ -57,6 +60,16 @@ export function useMatchmaking() {
   const [error, setError] = React.useState<string | null>(null);
   const [tipIncoming, setTipIncoming] = React.useState<TipIncoming | null>(null);
   const [tipOutgoing, setTipOutgoing] = React.useState<TipOutgoing | null>(null);
+  const [reactions, setReactions] = React.useState<ReactionMap>({});
+  // Ref mirror: toggleReaction must decide on/off synchronously before send.
+  const reactionsRef = React.useRef<ReactionMap>({});
+  const applyReactions = React.useCallback(
+    (fn: (prev: ReactionMap) => ReactionMap) => {
+      reactionsRef.current = fn(reactionsRef.current);
+      setReactions(reactionsRef.current);
+    },
+    [],
+  );
   const tipTimer = React.useRef<number | null>(null);
   const lastTipRequest = React.useRef<{ amountWei: string; display: string } | null>(null);
   const clientRef = React.useRef<RealtimeClient | null>(null);
@@ -74,6 +87,8 @@ export function useMatchmaking() {
     lastTipRequest.current = null;
     setTipIncoming(null);
     setTipOutgoing(null);
+    reactionsRef.current = {};
+    setReactions({});
   }, [clearTipTimer]);
 
   React.useEffect(() => {
@@ -120,14 +135,36 @@ export function useMatchmaking() {
         setPeerTyping(false);
       }),
       client.on("chat.msg", (p) => {
-        const { from, text, at } = p as { from: string; text: string; at: number };
-        setMessages((m) => [...m.slice(-99), { from, text, at, mine: false }]);
+        const { from, text, at, id } = p as { from: string; text: string; at: number; id?: unknown };
+        const mid = typeof id === "string" && id ? id : `${from}-${at}`;
+        setMessages((m) => [...m.slice(-99), { id: mid, from, text, at, mine: false }]);
       }),
       client.on("chat.file", (p) => {
-        const { from, name, mime, size, dataUrl, at } = p as {
-          from: string; name: string; mime: string; size: number; dataUrl: string; at: number;
+        const { from, name, mime, size, dataUrl, at, id } = p as {
+          from: string; name: string; mime: string; size: number; dataUrl: string; at: number; id?: unknown;
         };
-        setMessages((m) => [...m.slice(-99), { from, text: "", at, mine: false, file: { name, mime, size, dataUrl } }]);
+        const mid = typeof id === "string" && id ? id : `${from}-${at}`;
+        setMessages((m) => [...m.slice(-99), { id: mid, from, text: "", at, mine: false, file: { name, mime, size, dataUrl } }]);
+      }),
+      client.on("chat.reacted", (p) => {
+        const { toId, emoji, on } = p as { toId: unknown; emoji: unknown; on: unknown };
+        if (typeof toId !== "string" || typeof emoji !== "string" || typeof on !== "boolean") return;
+        applyReactions((prev) => {
+          const entry = { ...(prev[toId] ?? {}) };
+          if (on) {
+            const cur = entry[emoji] ?? { count: 0, mine: false };
+            entry[emoji] = { count: cur.count + 1, mine: cur.mine };
+          } else {
+            const cur = entry[emoji];
+            if (!cur) return prev;
+            if (cur.count <= 1) delete entry[emoji];
+            else entry[emoji] = { count: cur.count - 1, mine: false };
+          }
+          const next = { ...prev };
+          if (Object.keys(entry).length === 0) delete next[toId];
+          else next[toId] = entry;
+          return next;
+        });
       }),
       client.on("chat.typing", (p) => {
         setPeerTyping((p as { on: boolean }).on);
@@ -170,7 +207,7 @@ export function useMatchmaking() {
       clientRef.current = null;
       clearTipTimer();
     };
-  }, [clearTipTimer, resetTips]);
+  }, [clearTipTimer, resetTips, applyReactions]);
 
   const find = React.useCallback((opts: JoinOpts) => {
     lastJoin.current = opts;
@@ -197,8 +234,9 @@ export function useMatchmaking() {
     (text: string) => {
       const clean = text.trim();
       if (!clean || state.kind !== "connected") return;
-      clientRef.current?.send("chat.send", { text: clean.slice(0, 500) });
-      setMessages((m) => [...m.slice(-99), { from: "You", text: clean.slice(0, 500), at: Date.now(), mine: true }]);
+      const id = crypto.randomUUID();
+      clientRef.current?.send("chat.send", { text: clean.slice(0, 500), id });
+      setMessages((m) => [...m.slice(-99), { id, from: "You", text: clean.slice(0, 500), at: Date.now(), mine: true }]);
     },
     [state.kind],
   );
@@ -210,8 +248,9 @@ export function useMatchmaking() {
   const sendFile = React.useCallback(
     (file: ChatFile) => {
       if (state.kind !== "connected") return;
-      clientRef.current?.send("chat.file", file);
-      setMessages((m) => [...m.slice(-99), { from: "You", text: "", at: Date.now(), mine: true, file }]);
+      const id = crypto.randomUUID();
+      clientRef.current?.send("chat.file", { ...file, id });
+      setMessages((m) => [...m.slice(-99), { id, from: "You", text: "", at: Date.now(), mine: true, file }]);
     },
     [state.kind],
   );
@@ -248,6 +287,26 @@ export function useMatchmaking() {
     resetTips();
   }, [resetTips]);
 
+  /** Toggle an emoji reaction on a message. Relayed ephemerally like chat. */
+  const toggleReaction = React.useCallback((toId: string, emoji: string) => {
+    const cur = reactionsRef.current[toId]?.[emoji];
+    const on = !(cur?.mine === true);
+    applyReactions((prev) => {
+      const entry = { ...(prev[toId] ?? {}) };
+      if (on) {
+        entry[emoji] = { count: (entry[emoji]?.count ?? 0) + 1, mine: true };
+      } else if (entry[emoji]) {
+        if (entry[emoji].count <= 1) delete entry[emoji];
+        else entry[emoji] = { count: entry[emoji].count - 1, mine: false };
+      }
+      const next = { ...prev };
+      if (Object.keys(entry).length === 0) delete next[toId];
+      else next[toId] = entry;
+      return next;
+    });
+    clientRef.current?.send("chat.react", { toId, emoji, on });
+  }, [applyReactions]);
+
   const rtcSend = React.useCallback((data: RtcSignal) => {
     clientRef.current?.send("rtc.signal", { data });
   }, []);
@@ -260,7 +319,7 @@ export function useMatchmaking() {
     });
   }, []);
 
-  return { status, state, messages, peerTyping, error, find, stop, next, sendText, sendFile, setTyping, block, report, rtcSend, onRtc, tipIncoming, tipOutgoing, requestTip, respondTip, dismissTips };
+  return { status, state, messages, peerTyping, error, find, stop, next, sendText, sendFile, setTyping, block, report, rtcSend, onRtc, tipIncoming, tipOutgoing, requestTip, respondTip, dismissTips, reactions, toggleReaction };
 }
 
 export type Matchmaking = ReturnType<typeof useMatchmaking>;

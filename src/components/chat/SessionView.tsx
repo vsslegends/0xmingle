@@ -107,7 +107,9 @@ export function SessionView({ mm }: { mm: Matchmaking }) {
           {mm.messages.length === 0 ? (
             <p className="text-center text-sm text-slate-500">Say hi — messages vanish when you leave.</p>
           ) : (
-            mm.messages.map((m, i) => <Message key={`${m.at}-${i}`} m={m} />)
+            mm.messages.map((m) => (
+              <Message key={m.id} m={m} reactions={mm.reactions[m.id]} onReact={(e) => mm.toggleReaction(m.id, e)} />
+            ))
           )}
           {mm.peerTyping ? <TypingIndicator /> : null}
           <div ref={bottomRef} />

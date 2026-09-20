@@ -227,11 +227,11 @@ function handle(conn: Conn, t: string, p: unknown): void {
         send(conn, { t: "error", p: { code: "RATE_LIMITED", message: "Messaging too fast. Slow down." } });
         return;
       }
-      const { text } = p as { text: string };
+      const { text, id } = p as { text: string; id?: unknown };
       const at = Date.now();
       const peer = conns.get(matchmaker.peerOf(conn.id) ?? "");
       if (peer) {
-        send(peer, { t: "chat.msg", p: { sid: session.id, from: displayName(conn), text, at } });
+        send(peer, { t: "chat.msg", p: { sid: session.id, from: displayName(conn), text, at, id: typeof id === "string" ? id : undefined } });
       }
       metrics.messages += 1;
       send(conn, { t: "chat.ack", p: { sid: session.id, at } });
@@ -258,14 +258,31 @@ function handle(conn: Conn, t: string, p: unknown): void {
         return;
       }
       conn.fileAt.push(now);
-      const { name, mime, size, dataUrl } = p as { name: string; mime: string; size: number; dataUrl: string };
+      const { name, mime, size, dataUrl, id } = p as { name: string; mime: string; size: number; dataUrl: string; id?: unknown };
       const at = Date.now();
       const peer = conns.get(matchmaker.peerOf(conn.id) ?? "");
       if (peer) {
-        send(peer, { t: "chat.file", p: { sid: session.id, from: displayName(conn), name, mime, size, dataUrl, at } });
+        send(peer, { t: "chat.file", p: { sid: session.id, from: displayName(conn), name, mime, size, dataUrl, at, id: typeof id === "string" ? id : undefined } });
       }
       metrics.messages += 1;
       send(conn, { t: "chat.ack", p: { sid: session.id, at } });
+      return;
+    }
+    case "chat.react": {
+      const session = matchmaker.sessionOf(conn.id);
+      if (!session) {
+        send(conn, { t: "error", p: { code: "NO_SESSION", message: "No active conversation." } });
+        return;
+      }
+      if (!checkRate(conn, 10, 10_000)) {
+        send(conn, { t: "error", p: { code: "RATE_LIMITED", message: "Reacting too fast. Slow down." } });
+        return;
+      }
+      const { toId, emoji, on } = p as { toId: string; emoji: string; on: boolean };
+      const peer = conns.get(matchmaker.peerOf(conn.id) ?? "");
+      if (peer) {
+        send(peer, { t: "chat.reacted", p: { sid: session.id, from: displayName(conn), toId, emoji, on } });
+      }
       return;
     }
     case "rtc.signal": {

@@ -59,4 +59,25 @@ describe("protocol", () => {
     expect(JSON.parse(encode({ t: "tip.answer", p: { sid: "s1", accepted: true, address: "0xabc" } })))
       .toMatchObject({ v: 1, t: "tip.answer" });
   });
+
+  it("accepts chat.react, carries optional message ids", () => {
+    expect(
+      decodeClient(JSON.stringify({ t: "chat.react", p: { toId: "m1", emoji: "❤️", on: true } })),
+    ).not.toBeNull();
+    expect(
+      decodeClient(JSON.stringify({ t: "chat.react", p: { toId: "", emoji: "❤️", on: true } })),
+    ).toBeNull();
+    expect(
+      decodeClient(JSON.stringify({ t: "chat.react", p: { toId: "m1", emoji: "❤️", on: "yes" } })),
+    ).toBeNull();
+    // ids optional for backward compat, passed through when present
+    expect(
+      decodeClient(JSON.stringify({ t: "chat.send", p: { text: "hi" } })),
+    ).toMatchObject({ t: "chat.send" });
+    expect(
+      decodeClient(JSON.stringify({ t: "chat.send", p: { text: "hi", id: "m9" } })),
+    ).toMatchObject({ t: "chat.send", p: { text: "hi", id: "m9" } });
+    expect(JSON.parse(encode({ t: "chat.reacted", p: { sid: "s1", from: "A", toId: "m9", emoji: "🔥", on: false } })))
+      .toMatchObject({ v: 1, t: "chat.reacted" });
+  });
 });

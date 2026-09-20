@@ -7,7 +7,7 @@ import type { ChatMode as Mode } from "@/lib/interests";
 export type MatchState =
   | { kind: "idle" }
   | { kind: "searching" }
-  | { kind: "connected"; sid: string; peer: string; mode: Mode };
+  | { kind: "connected"; sid: string; peer: string; mode: Mode; initiator: boolean };
 
 export interface ChatMessage {
   from: string;
@@ -15,6 +15,8 @@ export interface ChatMessage {
   at: number;
   mine: boolean;
 }
+
+export type RtcSignal = { kind: string; [k: string]: unknown };
 
 interface JoinOpts {
   mode: Mode;
@@ -44,11 +46,16 @@ export function useMatchmaking() {
         setState({ kind: "searching" });
       }),
       client.on("session.matched", (p) => {
-        const { sid, peer, mode } = p as { sid: string; peer: string; mode: Mode };
+        const { sid, peer, mode, initiator } = p as {
+          sid: string;
+          peer: string;
+          mode: Mode;
+          initiator: boolean;
+        };
         setMessages([]);
         setPeerTyping(false);
         setError(null);
-        setState({ kind: "connected", sid, peer, mode });
+        setState({ kind: "connected", sid, peer, mode, initiator: initiator === true });
       }),
       client.on("session.ended", (p) => {
         const { reason } = p as { reason: string };
@@ -128,7 +135,19 @@ export function useMatchmaking() {
     clientRef.current?.send("peer.report", { category, detail });
   }, []);
 
-  return { status, state, messages, peerTyping, error, find, stop, next, sendText, setTyping, block, report };
+  const rtcSend = React.useCallback((data: RtcSignal) => {
+    clientRef.current?.send("rtc.signal", { data });
+  }, []);
+
+  const onRtc = React.useCallback((cb: (data: RtcSignal) => void) => {
+    const client = clientRef.current;
+    if (!client) return () => {};
+    return client.on("rtc.signal", (p) => {
+      cb((p as { data: RtcSignal }).data);
+    });
+  }, []);
+
+  return { status, state, messages, peerTyping, error, find, stop, next, sendText, setTyping, block, report, rtcSend, onRtc };
 }
 
 export type Matchmaking = ReturnType<typeof useMatchmaking>;

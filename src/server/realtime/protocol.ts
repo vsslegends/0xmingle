@@ -25,7 +25,7 @@ export type ClientMessage = z.infer<typeof clientMessageSchema>;
 
 export type ServerMessage =
   | { t: "q.searching" }
-  | { t: "session.matched"; p: { sid: string; peer: string; mode: string } }
+  | { t: "session.matched"; p: { sid: string; peer: string; mode: string; initiator: boolean } }
   | { t: "session.ended"; p: { sid: string; reason: string } }
   | { t: "chat.msg"; p: { sid: string; from: string; text: string; at: number } }
   | { t: "chat.ack"; p: { sid: string; at: number } }

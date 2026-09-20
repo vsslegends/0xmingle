@@ -1,12 +1,18 @@
 "use client";
 
 import * as React from "react";
+import dynamic from "next/dynamic";
 import { Card, CardBody } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ChatInput, TypingIndicator } from "@/components/chat/ChatInput";
 import { NextButton, BlockButton } from "@/components/chat/Controls";
 import { ReportModal } from "@/components/ReportModal";
 import type { Matchmaking } from "@/hooks/useMatchmaking";
+
+const VideoRoom = dynamic(
+  () => import("@/components/chat/VideoRoom").then((m) => m.VideoRoom),
+  { ssr: false, loading: () => <p className="text-sm text-slate-500" role="status">Loading media…</p> },
+);
 
 function time(at: number): string {
   return new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -23,7 +29,7 @@ export function SessionView({ mm }: { mm: Matchmaking }) {
   }, [msgCount]);
 
   if (mm.state.kind !== "connected") return null;
-  const { sid, peer, mode } = mm.state;
+  const { sid, peer, mode, initiator } = mm.state;
 
   return (
     <Card>
@@ -72,6 +78,17 @@ export function SessionView({ mm }: { mm: Matchmaking }) {
         </div>
 
         <ChatInput onSend={mm.sendText} onTyping={mm.setTyping} />
+
+        {mode !== "text" ? (
+          <VideoRoom
+            key={sid}
+            mode={mode}
+            initiator={initiator}
+            peer={peer}
+            rtcSend={mm.rtcSend}
+            onRtc={mm.onRtc}
+          />
+        ) : null}
 
         <div className="sticky bottom-0 flex items-center justify-between gap-2 bg-transparent pt-1">
           <Button variant="secondary" onClick={mm.stop}>

@@ -167,11 +167,11 @@ function handle(conn: Conn, t: string, p: unknown): void {
       const peerId = session.a === conn.id ? session.b : session.a;
       const peer = conns.get(peerId);
       if (peer) {
-        send(peer, { t: "session.matched", p: { sid: session.id, peer: displayName(conn), mode: session.mode } });
+        send(peer, { t: "session.matched", p: { sid: session.id, peer: displayName(conn), mode: session.mode, initiator: true } });
       }
       send(conn, {
         t: "session.matched",
-        p: { sid: session.id, peer: peer ? displayName(peer) : "Stranger", mode: session.mode },
+        p: { sid: session.id, peer: peer ? displayName(peer) : "Stranger", mode: session.mode, initiator: false },
       });
       return;
     }
@@ -242,11 +242,11 @@ function handle(conn: Conn, t: string, p: unknown): void {
           metrics.matches += 1;
           const peer = conns.get(matched.a === conn.id ? matched.b : matched.a);
           if (peer) {
-            send(peer, { t: "session.matched", p: { sid: matched.id, peer: displayName(conn), mode: matched.mode } });
+            send(peer, { t: "session.matched", p: { sid: matched.id, peer: displayName(conn), mode: matched.mode, initiator: true } });
           }
           send(conn, {
             t: "session.matched",
-            p: { sid: matched.id, peer: peer ? displayName(peer) : "Stranger", mode: matched.mode },
+            p: { sid: matched.id, peer: peer ? displayName(peer) : "Stranger", mode: matched.mode, initiator: false },
           });
         }
       }

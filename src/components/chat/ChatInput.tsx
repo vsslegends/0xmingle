@@ -11,11 +11,19 @@ export function ChatInput({
   onSend,
   onFile,
   onTyping,
+  replyTo,
+  editing,
+  onCancelMeta,
+  onEditCommit,
 }: {
   disabled?: boolean;
   onSend: (text: string) => void;
   onFile?: (file: PreparedFile) => void;
   onTyping?: (on: boolean) => void;
+  replyTo?: { from: string; text: string } | null;
+  editing?: { text: string } | null;
+  onCancelMeta?: () => void;
+  onEditCommit?: (text: string) => void;
 }) {
   const [value, setValue] = React.useState("");
   const [pending, setPending] = React.useState<PreparedFile | null>(null);
@@ -23,6 +31,11 @@ export function ChatInput({
   const [attachError, setAttachError] = React.useState<string | null>(null);
   const pickerRef = React.useRef<HTMLInputElement>(null);
   const stopTimer = React.useRef<number | null>(null);
+
+  // When edit mode starts, preload the message text.
+  React.useEffect(() => {
+    if (editing) setValue(editing.text);
+  }, [editing]);
 
   const type = (v: string) => {
     setValue(v);
@@ -45,6 +58,13 @@ export function ChatInput({
   };
 
   const send = () => {
+    if (editing && onEditCommit) {
+      if (!value.trim()) return;
+      onEditCommit(value);
+      setValue("");
+      onTyping?.(false);
+      return;
+    }
     if (pending && onFile) {
       onFile(pending);
       setPending(null);
@@ -59,6 +79,33 @@ export function ChatInput({
 
   return (
     <div>
+      {editing ? (
+        <div className="mb-2 flex items-center gap-2 rounded-xl border border-amber-300/20 bg-amber-300/10 p-2 text-xs" role="status">
+          <span className="flex-1 truncate text-amber-100">Editing message — press Save.</span>
+          <button
+            type="button"
+            onClick={() => { setValue(""); onCancelMeta?.(); }}
+            aria-label="Cancel editing"
+            className="rounded-full p-1 text-slate-400 hover:bg-white/10 hover:text-white"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      ) : replyTo ? (
+        <div className="mb-2 flex items-center gap-2 rounded-xl border border-white/10 bg-black/30 p-2 text-xs" role="status">
+          <span className="flex-1 truncate text-slate-300">
+            Replying to <span className="font-semibold">{replyTo.from}</span>: {replyTo.text.slice(0, 80) || "attachment"}
+          </span>
+          <button
+            type="button"
+            onClick={() => onCancelMeta?.()}
+            aria-label="Cancel reply"
+            className="rounded-full p-1 text-slate-400 hover:bg-white/10 hover:text-white"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      ) : null}
       {pending ? (
         <div className="mb-2 flex items-center gap-2 rounded-xl border border-white/10 bg-black/30 p-2 text-xs" role="status">
           {pending.dataUrl.startsWith("data:image") ? (
@@ -128,7 +175,7 @@ export function ChatInput({
           maxLength={500}
         />
         <Button type="submit" disabled={disabled || busy || (!value.trim() && !pending)}>
-          {busy ? "…" : "Send"}
+          {busy ? "…" : editing ? "Save" : "Send"}
         </Button>
       </form>
       {attachError ? (

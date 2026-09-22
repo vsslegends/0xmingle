@@ -227,11 +227,11 @@ function handle(conn: Conn, t: string, p: unknown): void {
         send(conn, { t: "error", p: { code: "RATE_LIMITED", message: "Messaging too fast. Slow down." } });
         return;
       }
-      const { text, id } = p as { text: string; id?: unknown };
+      const { text, id, replyToId } = p as { text: string; id?: unknown; replyToId?: unknown };
       const at = Date.now();
       const peer = conns.get(matchmaker.peerOf(conn.id) ?? "");
       if (peer) {
-        send(peer, { t: "chat.msg", p: { sid: session.id, from: displayName(conn), text, at, id: typeof id === "string" ? id : undefined } });
+        send(peer, { t: "chat.msg", p: { sid: session.id, from: displayName(conn), text, at, id: typeof id === "string" ? id : undefined, replyToId: typeof replyToId === "string" ? replyToId : undefined } });
       }
       metrics.messages += 1;
       send(conn, { t: "chat.ack", p: { sid: session.id, at } });
@@ -282,6 +282,52 @@ function handle(conn: Conn, t: string, p: unknown): void {
       const peer = conns.get(matchmaker.peerOf(conn.id) ?? "");
       if (peer) {
         send(peer, { t: "chat.reacted", p: { sid: session.id, from: displayName(conn), toId, emoji, on } });
+      }
+      return;
+    }
+    case "chat.edit": {
+      const session = matchmaker.sessionOf(conn.id);
+      if (!session) {
+        send(conn, { t: "error", p: { code: "NO_SESSION", message: "No active conversation." } });
+        return;
+      }
+      if (!checkRate(conn, 10, 10_000)) {
+        send(conn, { t: "error", p: { code: "RATE_LIMITED", message: "Editing too fast. Slow down." } });
+        return;
+      }
+      const { id, text } = p as { id: string; text: string };
+      const at = Date.now();
+      const peer = conns.get(matchmaker.peerOf(conn.id) ?? "");
+      if (peer) {
+        send(peer, { t: "chat.edited", p: { sid: session.id, from: displayName(conn), id, text, at } });
+      }
+      return;
+    }
+    case "chat.delete": {
+      const session = matchmaker.sessionOf(conn.id);
+      if (!session) {
+        send(conn, { t: "error", p: { code: "NO_SESSION", message: "No active conversation." } });
+        return;
+      }
+      if (!checkRate(conn, 10, 10_000)) {
+        send(conn, { t: "error", p: { code: "RATE_LIMITED", message: "Deleting too fast. Slow down." } });
+        return;
+      }
+      const { id } = p as { id: string };
+      const peer = conns.get(matchmaker.peerOf(conn.id) ?? "");
+      if (peer) {
+        send(peer, { t: "chat.deleted", p: { sid: session.id, from: displayName(conn), id, at: Date.now() } });
+      }
+      return;
+    }
+    case "chat.read": {
+      const session = matchmaker.sessionOf(conn.id);
+      if (!session) return;
+      if (!checkRate(conn, 10, 10_000)) return;
+      const { lastId } = p as { lastId?: unknown };
+      const peer = conns.get(matchmaker.peerOf(conn.id) ?? "");
+      if (peer) {
+        send(peer, { t: "chat.read", p: { sid: session.id, from: displayName(conn), lastId: typeof lastId === "string" ? lastId : undefined, at: Date.now() } });
       }
       return;
     }

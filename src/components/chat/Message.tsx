@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { FileText, Download, SmilePlus } from "lucide-react";
+import { FileText, Download, SmilePlus, Reply, Pencil, Trash2 } from "lucide-react";
 import { linkify, isImageMime, formatBytes } from "@/lib/attachments";
 import type { ChatMessage } from "@/hooks/useMatchmaking";
 import { cn } from "@/lib/utils";
@@ -39,14 +39,34 @@ export function Message({
   m,
   reactions,
   onReact,
+  replySnippet,
+  seen,
+  onReply,
+  onEdit,
+  onDelete,
 }: {
   m: ChatMessage;
   reactions?: Record<string, { count: number; mine: boolean }>;
   onReact?: (emoji: string) => void;
+  replySnippet?: { from: string; text: string } | null;
+  seen?: boolean;
+  onReply?: () => void;
+  onEdit?: () => void;
+  onDelete?: () => void;
 }) {
   const [pickerOpen, setPickerOpen] = React.useState(false);
   const file = m.file;
   const chips = Object.entries(reactions ?? {}).filter(([, r]) => r.count > 0);
+  const canModify = m.mine && !m.deleted;
+  if (m.deleted) {
+    return (
+      <div className={m.mine ? "flex justify-end" : "flex justify-start"}>
+        <div className="max-w-[80%] rounded-2xl bg-white/5 px-4 py-2 text-sm italic text-slate-500">
+          Message deleted
+        </div>
+      </div>
+    );
+  }
   return (
     <div className={m.mine ? "flex justify-end" : "flex justify-start"}>
       <div className="group relative max-w-[80%]">
@@ -58,6 +78,18 @@ export function Message({
               : "rounded-tl-md bg-white/10 text-slate-200",
           )}
         >
+          {replySnippet ? (
+            <div
+              className={cn(
+                "mb-1.5 truncate rounded-lg border-l-2 px-2 py-1 text-xs",
+                m.mine ? "border-black/40 bg-black/10 text-black/70" : "border-cyan-300/60 bg-black/30 text-slate-300",
+              )}
+              aria-label={`Replying to ${replySnippet.from}`}
+            >
+              <span className="font-semibold">{replySnippet.from}</span>
+              <span className="ml-1 opacity-80">{replySnippet.text.slice(0, 80) || "attachment"}</span>
+            </div>
+          ) : null}
           {file && isImageMime(file.mime) ? (
             <a href={file.dataUrl} target="_blank" rel="noopener noreferrer" aria-label={`Open ${file.name} full size`}>
               {/* data: URL from allowlisted image mime — next/image can't optimize these */}
@@ -87,23 +119,59 @@ export function Message({
           {m.text ? <RichText text={m.text} dark={m.mine} /> : null}
           <p className={m.mine ? "mt-0.5 text-[10px] text-black/60" : "mt-0.5 text-[10px] text-slate-500"}>
             {m.mine ? "You" : m.from} · {time(m.at)}
+            {m.edited ? " · edited" : ""}
+            {seen ? " · Seen" : ""}
           </p>
         </div>
-        {onReact ? (
-          <button
-            type="button"
-            aria-label="React with emoji"
-            aria-expanded={pickerOpen}
-            onClick={() => setPickerOpen((v) => !v)}
-            className={cn(
-              "absolute -bottom-2 rounded-full border border-white/10 bg-[#141524] p-1 text-slate-400 shadow-lg transition-opacity hover:text-white",
-              m.mine ? "-left-3" : "-right-3",
-              pickerOpen ? "opacity-100" : "opacity-0 focus-visible:opacity-100 group-hover:opacity-100",
-            )}
-          >
-            <SmilePlus size={14} />
-          </button>
-        ) : null}
+        <div
+          className={cn(
+            "absolute -bottom-2 flex gap-0.5 rounded-full border border-white/10 bg-[#141524] p-0.5 shadow-lg transition-opacity",
+            m.mine ? "-left-3" : "-right-3",
+            pickerOpen ? "opacity-100" : "opacity-0 focus-within:opacity-100 group-hover:opacity-100",
+          )}
+        >
+          {onReply ? (
+            <button
+              type="button"
+              aria-label="Reply to message"
+              onClick={onReply}
+              className="rounded-full p-1 text-slate-400 hover:text-white"
+            >
+              <Reply size={14} />
+            </button>
+          ) : null}
+          {canModify && m.text && onEdit ? (
+            <button
+              type="button"
+              aria-label="Edit message"
+              onClick={onEdit}
+              className="rounded-full p-1 text-slate-400 hover:text-white"
+            >
+              <Pencil size={14} />
+            </button>
+          ) : null}
+          {canModify && onDelete ? (
+            <button
+              type="button"
+              aria-label="Delete message"
+              onClick={onDelete}
+              className="rounded-full p-1 text-slate-400 hover:text-red-300"
+            >
+              <Trash2 size={14} />
+            </button>
+          ) : null}
+          {onReact ? (
+            <button
+              type="button"
+              aria-label="React with emoji"
+              aria-expanded={pickerOpen}
+              onClick={() => setPickerOpen((v) => !v)}
+              className="rounded-full p-1 text-slate-400 hover:text-white"
+            >
+              <SmilePlus size={14} />
+            </button>
+          ) : null}
+        </div>
         {pickerOpen && onReact ? (
           <div className="absolute -bottom-9 z-10 flex gap-1 rounded-full border border-white/10 bg-[#141524] p-1.5 shadow-xl" role="toolbar" aria-label="Choose a reaction">
             {REACTION_EMOJIS.map((e) => (

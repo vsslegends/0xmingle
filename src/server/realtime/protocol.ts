@@ -12,6 +12,7 @@ export const clientMessageSchema = z.discriminatedUnion("t", [
   z.object({ t: z.literal("chat.send"), p: z.object({
     text: z.string().min(1).max(500),
     id: z.string().min(1).max(64).optional(),
+    replyToId: z.string().min(1).max(64).optional(),
   }) }),
   z.object({ t: z.literal("chat.typing"), p: z.object({ on: z.boolean() }) }),
   z.object({ t: z.literal("chat.file"), p: z.object({
@@ -25,6 +26,16 @@ export const clientMessageSchema = z.discriminatedUnion("t", [
     toId: z.string().min(1).max(64),
     emoji: z.string().min(1).max(12),
     on: z.boolean(),
+  }) }),
+  z.object({ t: z.literal("chat.edit"), p: z.object({
+    id: z.string().min(1).max(64),
+    text: z.string().min(1).max(500),
+  }) }),
+  z.object({ t: z.literal("chat.delete"), p: z.object({
+    id: z.string().min(1).max(64),
+  }) }),
+  z.object({ t: z.literal("chat.read"), p: z.object({
+    lastId: z.string().min(1).max(64).optional(),
   }) }),
   z.object({ t: z.literal("session.next") }),
   z.object({ t: z.literal("session.end") }),
@@ -47,9 +58,12 @@ export type ServerMessage =
   | { t: "q.searching" }
   | { t: "session.matched"; p: { sid: string; peer: string; mode: string; initiator: boolean; peerAddress?: string | null } }
   | { t: "session.ended"; p: { sid: string; reason: string } }
-  | { t: "chat.msg"; p: { sid: string; from: string; text: string; at: number; id?: string } }
+  | { t: "chat.msg"; p: { sid: string; from: string; text: string; at: number; id?: string; replyToId?: string } }
   | { t: "chat.file"; p: { sid: string; from: string; name: string; mime: string; size: number; dataUrl: string; at: number; id?: string } }
   | { t: "chat.reacted"; p: { sid: string; from: string; toId: string; emoji: string; on: boolean } }
+  | { t: "chat.edited"; p: { sid: string; from: string; id: string; text: string; at: number } }
+  | { t: "chat.deleted"; p: { sid: string; from: string; id: string; at: number } }
+  | { t: "chat.read"; p: { sid: string; from: string; lastId?: string; at: number } }
   | { t: "chat.ack"; p: { sid: string; at: number } }
   | { t: "chat.typing"; p: { sid: string; on: boolean } }
   | { t: "rtc.signal"; p: { sid: string; data: unknown } }

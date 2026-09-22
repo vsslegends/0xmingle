@@ -23,6 +23,10 @@ export interface ChatMessage {
   at: number;
   mine: boolean;
   file?: ChatFile;
+  replyToId?: string;
+  edited?: boolean;
+  editedAt?: number;
+  deleted?: boolean;
 }
 
 export type ReactionMap = Record<string, Record<string, { count: number; mine: boolean }>>;
@@ -61,6 +65,7 @@ export function useMatchmaking() {
   const [tipIncoming, setTipIncoming] = React.useState<TipIncoming | null>(null);
   const [tipOutgoing, setTipOutgoing] = React.useState<TipOutgoing | null>(null);
   const [reactions, setReactions] = React.useState<ReactionMap>({});
+  const [peerLastReadId, setPeerLastReadId] = React.useState<string | null>(null);
   // Ref mirror: toggleReaction must decide on/off synchronously before send.
   const reactionsRef = React.useRef<ReactionMap>({});
   const applyReactions = React.useCallback(
@@ -72,6 +77,7 @@ export function useMatchmaking() {
   );
   const tipTimer = React.useRef<number | null>(null);
   const lastTipRequest = React.useRef<{ amountWei: string; display: string } | null>(null);
+  const lastReadSent = React.useRef<string | null>(null);
   const clientRef = React.useRef<RealtimeClient | null>(null);
   const lastJoin = React.useRef<JoinOpts | null>(null);
 
@@ -85,10 +91,12 @@ export function useMatchmaking() {
   const resetTips = React.useCallback(() => {
     clearTipTimer();
     lastTipRequest.current = null;
+    lastReadSent.current = null;
     setTipIncoming(null);
     setTipOutgoing(null);
     reactionsRef.current = {};
     setReactions({});
+    setPeerLastReadId(null);
   }, [clearTipTimer]);
 
   React.useEffect(() => {
@@ -135,9 +143,10 @@ export function useMatchmaking() {
         setPeerTyping(false);
       }),
       client.on("chat.msg", (p) => {
-        const { from, text, at, id } = p as { from: string; text: string; at: number; id?: unknown };
+        const { from, text, at, id, replyToId } = p as { from: string; text: string; at: number; id?: unknown; replyToId?: unknown };
         const mid = typeof id === "string" && id ? id : `${from}-${at}`;
-        setMessages((m) => [...m.slice(-99), { id: mid, from, text, at, mine: false }]);
+        const reply = typeof replyToId === "string" && replyToId ? replyToId : undefined;
+        setMessages((m) => [...m.slice(-99), { id: mid, from, text, at, mine: false, replyToId: reply }]);
       }),
       client.on("chat.file", (p) => {
         const { from, name, mime, size, dataUrl, at, id } = p as {
@@ -168,6 +177,24 @@ export function useMatchmaking() {
       }),
       client.on("chat.typing", (p) => {
         setPeerTyping((p as { on: boolean }).on);
+      }),
+      // Remote edit: only apply when the target was authored by the peer
+      // (mine === false). Prevents a stranger from rewriting your bubbles.
+      client.on("chat.edited", (p) => {
+        const { id, text, at } = p as { id: unknown; text: unknown; at: unknown };
+        if (typeof id !== "string" || typeof text !== "string" || typeof at !== "number") return;
+        setMessages((m) => m.map((msg) => (msg.id === id && !msg.mine ? { ...msg, text: text.slice(0, 500), edited: true, editedAt: at } : msg)));
+      }),
+      // Remote delete: same authorship rule — only peer's own bubbles vanish.
+      client.on("chat.deleted", (p) => {
+        const { id } = p as { id: unknown };
+        if (typeof id !== "string") return;
+        setMessages((m) => m.map((msg) => (msg.id === id && !msg.mine ? { ...msg, deleted: true, text: "", file: undefined } : msg)));
+      }),
+      client.on("chat.read", (p) => {
+        const { lastId } = p as { lastId?: unknown };
+        if (typeof lastId === "string" && lastId) setPeerLastReadId(lastId);
+        else if (lastId === undefined) setPeerLastReadId(null);
       }),
       client.on("error", (p) => {
         setError((p as { message: string }).message ?? "Something went wrong.");
@@ -213,6 +240,8 @@ export function useMatchmaking() {
     lastJoin.current = opts;
     setError(null);
     setMessages([]);
+    setPeerLastReadId(null);
+    lastReadSent.current = null;
     setState({ kind: "searching" });
     clientRef.current?.send("q.join", opts);
   }, []);
@@ -226,17 +255,19 @@ export function useMatchmaking() {
   const next = React.useCallback(() => {
     setMessages([]);
     setPeerTyping(false);
+    setPeerLastReadId(null);
+    lastReadSent.current = null;
     setState({ kind: "searching" });
     clientRef.current?.send("session.next");
   }, []);
 
   const sendText = React.useCallback(
-    (text: string) => {
+    (text: string, replyToId?: string) => {
       const clean = text.trim();
       if (!clean || state.kind !== "connected") return;
       const id = crypto.randomUUID();
-      clientRef.current?.send("chat.send", { text: clean.slice(0, 500), id });
-      setMessages((m) => [...m.slice(-99), { id, from: "You", text: clean.slice(0, 500), at: Date.now(), mine: true }]);
+      clientRef.current?.send("chat.send", replyToId ? { text: clean.slice(0, 500), id, replyToId } : { text: clean.slice(0, 500), id });
+      setMessages((m) => [...m.slice(-99), { id, from: "You", text: clean.slice(0, 500), at: Date.now(), mine: true, replyToId }]);
     },
     [state.kind],
   );
@@ -319,7 +350,28 @@ export function useMatchmaking() {
     });
   }, []);
 
-  return { status, state, messages, peerTyping, error, find, stop, next, sendText, sendFile, setTyping, block, report, rtcSend, onRtc, tipIncoming, tipOutgoing, requestTip, respondTip, dismissTips, reactions, toggleReaction };
+  /** Edit one of my own text bubbles. Peer applies it only if it was mine. */
+  const editMessage = React.useCallback((id: string, text: string) => {
+    const clean = text.trim().slice(0, 500);
+    if (!clean) return;
+    clientRef.current?.send("chat.edit", { id, text: clean });
+    setMessages((m) => m.map((msg) => (msg.id === id && msg.mine && !msg.deleted ? { ...msg, text: clean, edited: true, editedAt: Date.now() } : msg)));
+  }, []);
+
+  /** Delete one of my own bubbles (tombstone locally, relay to peer). */
+  const deleteMessage = React.useCallback((id: string) => {
+    clientRef.current?.send("chat.delete", { id });
+    setMessages((m) => m.map((msg) => (msg.id === id && msg.mine ? { ...msg, deleted: true, text: "", file: undefined } : msg)));
+  }, []);
+
+  /** Tell the peer which message id we've seen (throttled by change). */
+  const markRead = React.useCallback((lastId: string | null) => {
+    if (!lastId || lastReadSent.current === lastId) return;
+    lastReadSent.current = lastId;
+    clientRef.current?.send("chat.read", { lastId });
+  }, []);
+
+  return { status, state, messages, peerTyping, error, find, stop, next, sendText, sendFile, setTyping, block, report, rtcSend, onRtc, tipIncoming, tipOutgoing, requestTip, respondTip, dismissTips, reactions, toggleReaction, editMessage, deleteMessage, markRead, peerLastReadId };
 }
 
 export type Matchmaking = ReturnType<typeof useMatchmaking>;

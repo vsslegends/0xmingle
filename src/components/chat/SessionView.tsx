@@ -22,6 +22,8 @@ const VideoRoom = dynamic(
 /** Live conversation view: ephemeral messages, typing, Next/Stop/Block/Report. */
 export function SessionView({ mm }: { mm: Matchmaking }) {
   const [reportOpen, setReportOpen] = React.useState(false);
+  const [replyToId, setReplyToId] = React.useState<string | null>(null);
+  const [editingId, setEditingId] = React.useState<string | null>(null);
   const [tipFlow, setTipFlow] = React.useState<
     | null
     | { kind: "direct" }
@@ -30,10 +32,28 @@ export function SessionView({ mm }: { mm: Matchmaking }) {
   >(null);
   const bottomRef = React.useRef<HTMLDivElement>(null);
   const msgCount = mm.state.kind === "connected" ? mm.messages.length : 0;
+  const sidKey = mm.state.kind === "connected" ? mm.state.sid : null;
 
   React.useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: "end" });
   }, [msgCount]);
+
+  // New session → clear reply/edit drafts.
+  React.useEffect(() => {
+    setReplyToId(null);
+    setEditingId(null);
+  }, [sidKey]);
+
+  // Read receipts: advertise the latest visible message id to the peer.
+  // Throttled inside the hook (one frame per new id). Ephemeral like typing.
+  const lastVisibleId =
+    mm.state.kind === "connected" && mm.messages.length > 0
+      ? mm.messages[mm.messages.length - 1].id
+      : null;
+  React.useEffect(() => {
+    if (lastVisibleId) mm.markRead(lastVisibleId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastVisibleId]);
 
   // Peer accepted our request → open the send modal prefilled with the amount.
   React.useEffect(() => {
@@ -47,6 +67,20 @@ export function SessionView({ mm }: { mm: Matchmaking }) {
   const { sid, peer, mode, initiator, peerAddress } = mm.state;
   const incoming = mm.tipIncoming;
   const outgoing = mm.tipOutgoing;
+
+  const byId = new Map(mm.messages.map((x) => [x.id, x]));
+  const replyTarget = replyToId ? byId.get(replyToId) ?? null : null;
+  const editingTarget = editingId ? byId.get(editingId) ?? null : null;
+  // Seen: the last of my messages at-or-before the id the peer advertised.
+  let seenId: string | null = null;
+  if (mm.peerLastReadId) {
+    const idx = mm.messages.findIndex((x) => x.id === mm.peerLastReadId);
+    if (idx >= 0) {
+      for (let i = idx; i >= 0; i--) {
+        if (mm.messages[i].mine && !mm.messages[i].deleted) { seenId = mm.messages[i].id; break; }
+      }
+    }
+  }
 
   const openTip = () => {
     setTipFlow(peerAddress ? { kind: "direct" } : { kind: "request" });
@@ -107,15 +141,36 @@ export function SessionView({ mm }: { mm: Matchmaking }) {
           {mm.messages.length === 0 ? (
             <p className="text-center text-sm text-slate-500">Say hi — messages vanish when you leave.</p>
           ) : (
-            mm.messages.map((m) => (
-              <Message key={m.id} m={m} reactions={mm.reactions[m.id]} onReact={(e) => mm.toggleReaction(m.id, e)} />
-            ))
+            mm.messages.map((m) => {
+              const target = m.replyToId ? byId.get(m.replyToId) : undefined;
+              return (
+                <Message
+                  key={m.id}
+                  m={m}
+                  reactions={mm.reactions[m.id]}
+                  onReact={(e) => mm.toggleReaction(m.id, e)}
+                  replySnippet={target ? { from: target.mine ? "You" : target.from, text: target.text } : m.replyToId ? { from: "Stranger", text: "" } : null}
+                  seen={seenId === m.id}
+                  onReply={() => { setEditingId(null); setReplyToId(m.id); }}
+                  onEdit={m.mine && m.text && !m.deleted ? () => { setReplyToId(null); setEditingId(m.id); } : undefined}
+                  onDelete={m.mine && !m.deleted ? () => mm.deleteMessage(m.id) : undefined}
+                />
+              );
+            })
           )}
           {mm.peerTyping ? <TypingIndicator /> : null}
           <div ref={bottomRef} />
         </div>
 
-        <ChatInput onSend={mm.sendText} onFile={mm.sendFile} onTyping={mm.setTyping} />
+        <ChatInput
+          onSend={(text) => { mm.sendText(text, replyToId ?? undefined); setReplyToId(null); }}
+          onFile={mm.sendFile}
+          onTyping={mm.setTyping}
+          replyTo={replyTarget ? { from: replyTarget.mine ? "You" : replyTarget.from, text: replyTarget.text } : null}
+          editing={editingTarget && editingTarget.text ? { text: editingTarget.text } : null}
+          onCancelMeta={() => { setReplyToId(null); setEditingId(null); }}
+          onEditCommit={(text) => { if (editingId) mm.editMessage(editingId, text); setEditingId(null); }}
+        />
 
         {mode !== "text" ? (
           <VideoRoom

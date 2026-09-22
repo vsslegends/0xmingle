@@ -80,4 +80,40 @@ describe("protocol", () => {
     expect(JSON.parse(encode({ t: "chat.reacted", p: { sid: "s1", from: "A", toId: "m9", emoji: "🔥", on: false } })))
       .toMatchObject({ v: 1, t: "chat.reacted" });
   });
+
+  it("accepts reply/edit/delete/read, rejects overlong or empty", () => {
+    expect(
+      decodeClient(JSON.stringify({ t: "chat.send", p: { text: "hi", id: "m1", replyToId: "m0" } })),
+    ).toMatchObject({ t: "chat.send", p: { text: "hi", replyToId: "m0" } });
+    expect(
+      decodeClient(JSON.stringify({ t: "chat.send", p: { text: "hi", replyToId: "" } })),
+    ).toBeNull();
+    expect(
+      decodeClient(JSON.stringify({ t: "chat.edit", p: { id: "m1", text: "new" } })),
+    ).not.toBeNull();
+    expect(
+      decodeClient(JSON.stringify({ t: "chat.edit", p: { id: "m1", text: "" } })),
+    ).toBeNull();
+    expect(
+      decodeClient(JSON.stringify({ t: "chat.edit", p: { id: "m1", text: "x".repeat(501) } })),
+    ).toBeNull();
+    expect(
+      decodeClient(JSON.stringify({ t: "chat.delete", p: { id: "m1" } })),
+    ).not.toBeNull();
+    expect(
+      decodeClient(JSON.stringify({ t: "chat.delete", p: { id: "" } })),
+    ).toBeNull();
+    expect(
+      decodeClient(JSON.stringify({ t: "chat.read", p: { lastId: "m1" } })),
+    ).not.toBeNull();
+    expect(
+      decodeClient(JSON.stringify({ t: "chat.read", p: {} })),
+    ).not.toBeNull();
+    expect(JSON.parse(encode({ t: "chat.edited", p: { sid: "s1", from: "A", id: "m1", text: "new", at: 1 } })))
+      .toMatchObject({ v: 1, t: "chat.edited" });
+    expect(JSON.parse(encode({ t: "chat.deleted", p: { sid: "s1", from: "A", id: "m1", at: 1 } })))
+      .toMatchObject({ v: 1, t: "chat.deleted" });
+    expect(JSON.parse(encode({ t: "chat.read", p: { sid: "s1", from: "A", lastId: "m1", at: 1 } })))
+      .toMatchObject({ v: 1, t: "chat.read" });
+  });
 });

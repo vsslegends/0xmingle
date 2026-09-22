@@ -234,7 +234,7 @@ function handle(conn: Conn, t: string, p: unknown): void {
         send(peer, { t: "chat.msg", p: { sid: session.id, from: displayName(conn), text, at, id: typeof id === "string" ? id : undefined, replyToId: typeof replyToId === "string" ? replyToId : undefined } });
       }
       metrics.messages += 1;
-      send(conn, { t: "chat.ack", p: { sid: session.id, at } });
+      send(conn, { t: "chat.ack", p: { sid: session.id, at, id: typeof id === "string" ? id : undefined } });
       return;
     }
     case "chat.typing": {
@@ -265,7 +265,7 @@ function handle(conn: Conn, t: string, p: unknown): void {
         send(peer, { t: "chat.file", p: { sid: session.id, from: displayName(conn), name, mime, size, dataUrl, at, id: typeof id === "string" ? id : undefined } });
       }
       metrics.messages += 1;
-      send(conn, { t: "chat.ack", p: { sid: session.id, at } });
+      send(conn, { t: "chat.ack", p: { sid: session.id, at, id: typeof id === "string" ? id : undefined } });
       return;
     }
     case "chat.react": {

@@ -41,6 +41,7 @@ export function Message({
   onReact,
   replySnippet,
   seen,
+  delivered,
   onReply,
   onEdit,
   onDelete,
@@ -50,6 +51,7 @@ export function Message({
   onReact?: (emoji: string) => void;
   replySnippet?: { from: string; text: string } | null;
   seen?: boolean;
+  delivered?: boolean;
   onReply?: () => void;
   onEdit?: () => void;
   onDelete?: () => void;
@@ -120,7 +122,7 @@ export function Message({
           <p className={m.mine ? "mt-0.5 text-[10px] text-black/60" : "mt-0.5 text-[10px] text-slate-500"}>
             {m.mine ? "You" : m.from} · {time(m.at)}
             {m.edited ? " · edited" : ""}
-            {seen ? " · Seen" : ""}
+            {m.mine ? (seen ? " · Seen" : delivered ? " · Delivered" : " · Sent") : ""}
           </p>
         </div>
         <div

@@ -66,6 +66,8 @@ export function useMatchmaking() {
   const [tipOutgoing, setTipOutgoing] = React.useState<TipOutgoing | null>(null);
   const [reactions, setReactions] = React.useState<ReactionMap>({});
   const [peerLastReadId, setPeerLastReadId] = React.useState<string | null>(null);
+  // Per-message delivery: gateway acks each relayed text/file with its id.
+  const [delivered, setDelivered] = React.useState<Record<string, true>>({});
   // Ref mirror: toggleReaction must decide on/off synchronously before send.
   const reactionsRef = React.useRef<ReactionMap>({});
   const applyReactions = React.useCallback(
@@ -97,6 +99,7 @@ export function useMatchmaking() {
     reactionsRef.current = {};
     setReactions({});
     setPeerLastReadId(null);
+    setDelivered({});
   }, [clearTipTimer]);
 
   React.useEffect(() => {
@@ -196,6 +199,12 @@ export function useMatchmaking() {
         if (typeof lastId === "string" && lastId) setPeerLastReadId(lastId);
         else if (lastId === undefined) setPeerLastReadId(null);
       }),
+      // Delivery receipt: gateway relayed my message (by id) to the peer socket.
+      client.on("chat.ack", (p) => {
+        const { id } = p as { id?: unknown };
+        if (typeof id !== "string" || !id) return;
+        setDelivered((d) => (d[id] ? d : { ...d, [id]: true }));
+      }),
       client.on("error", (p) => {
         setError((p as { message: string }).message ?? "Something went wrong.");
       }),
@@ -241,6 +250,7 @@ export function useMatchmaking() {
     setError(null);
     setMessages([]);
     setPeerLastReadId(null);
+    setDelivered({});
     lastReadSent.current = null;
     setState({ kind: "searching" });
     clientRef.current?.send("q.join", opts);
@@ -256,6 +266,7 @@ export function useMatchmaking() {
     setMessages([]);
     setPeerTyping(false);
     setPeerLastReadId(null);
+    setDelivered({});
     lastReadSent.current = null;
     setState({ kind: "searching" });
     clientRef.current?.send("session.next");
@@ -371,7 +382,7 @@ export function useMatchmaking() {
     clientRef.current?.send("chat.read", { lastId });
   }, []);
 
-  return { status, state, messages, peerTyping, error, find, stop, next, sendText, sendFile, setTyping, block, report, rtcSend, onRtc, tipIncoming, tipOutgoing, requestTip, respondTip, dismissTips, reactions, toggleReaction, editMessage, deleteMessage, markRead, peerLastReadId };
+  return { status, state, messages, peerTyping, error, find, stop, next, sendText, sendFile, setTyping, block, report, rtcSend, onRtc, tipIncoming, tipOutgoing, requestTip, respondTip, dismissTips, reactions, toggleReaction, editMessage, deleteMessage, markRead, peerLastReadId, delivered };
 }
 
 export type Matchmaking = ReturnType<typeof useMatchmaking>;

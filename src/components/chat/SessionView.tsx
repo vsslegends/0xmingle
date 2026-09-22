@@ -151,6 +151,7 @@ export function SessionView({ mm }: { mm: Matchmaking }) {
                   onReact={(e) => mm.toggleReaction(m.id, e)}
                   replySnippet={target ? { from: target.mine ? "You" : target.from, text: target.text } : m.replyToId ? { from: "Stranger", text: "" } : null}
                   seen={seenId === m.id}
+                  delivered={!!mm.delivered[m.id]}
                   onReply={() => { setEditingId(null); setReplyToId(m.id); }}
                   onEdit={m.mine && m.text && !m.deleted ? () => { setReplyToId(null); setEditingId(m.id); } : undefined}
                   onDelete={m.mine && !m.deleted ? () => mm.deleteMessage(m.id) : undefined}

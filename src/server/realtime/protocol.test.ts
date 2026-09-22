@@ -115,5 +115,8 @@ describe("protocol", () => {
       .toMatchObject({ v: 1, t: "chat.deleted" });
     expect(JSON.parse(encode({ t: "chat.read", p: { sid: "s1", from: "A", lastId: "m1", at: 1 } })))
       .toMatchObject({ v: 1, t: "chat.read" });
+    // delivery acks echo the sender's message id so the UI can tick Sent → Delivered
+    expect(JSON.parse(encode({ t: "chat.ack", p: { sid: "s1", at: 1, id: "m1" } })))
+      .toMatchObject({ v: 1, t: "chat.ack", p: { id: "m1" } });
   });
 });

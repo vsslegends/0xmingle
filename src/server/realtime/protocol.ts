@@ -64,7 +64,7 @@ export type ServerMessage =
   | { t: "chat.edited"; p: { sid: string; from: string; id: string; text: string; at: number } }
   | { t: "chat.deleted"; p: { sid: string; from: string; id: string; at: number } }
   | { t: "chat.read"; p: { sid: string; from: string; lastId?: string; at: number } }
-  | { t: "chat.ack"; p: { sid: string; at: number } }
+  | { t: "chat.ack"; p: { sid: string; at: number; id?: string } }
   | { t: "chat.typing"; p: { sid: string; on: boolean } }
   | { t: "rtc.signal"; p: { sid: string; data: unknown } }
   | { t: "tip.incoming"; p: { sid: string; from: string; amountWei: string; display: string } }

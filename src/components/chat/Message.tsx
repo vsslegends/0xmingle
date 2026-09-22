@@ -127,7 +127,7 @@ export function Message({
           className={cn(
             "absolute -bottom-2 flex gap-0.5 rounded-full border border-white/10 bg-[#141524] p-0.5 shadow-lg transition-opacity",
             m.mine ? "-left-3" : "-right-3",
-            pickerOpen ? "opacity-100" : "opacity-0 focus-within:opacity-100 group-hover:opacity-100",
+            pickerOpen ? "opacity-100" : "opacity-0 focus-within:opacity-100 group-hover:opacity-100 [@media(pointer:coarse)]:opacity-100",
           )}
         >
           {onReply ? (

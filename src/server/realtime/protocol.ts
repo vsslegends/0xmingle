@@ -55,6 +55,7 @@ export const clientMessageSchema = z.discriminatedUnion("t", [
 export type ClientMessage = z.infer<typeof clientMessageSchema>;
 
 export type ServerMessage =
+  | { t: "hello"; p: { caps: string[] } }
   | { t: "q.searching" }
   | { t: "session.matched"; p: { sid: string; peer: string; mode: string; initiator: boolean; peerAddress?: string | null } }
   | { t: "session.ended"; p: { sid: string; reason: string } }
@@ -74,6 +75,18 @@ export type ServerMessage =
 export function encode(msg: ServerMessage): string {
   return JSON.stringify({ v: 1, ...msg });
 }
+
+/** Capability flags the gateway advertises on connect. Bump when adding relay features. */
+export const RELAY_CAPS = [
+  "chat.send",
+  "chat.reply",
+  "chat.file",
+  "chat.react",
+  "chat.edit",
+  "chat.delete",
+  "chat.read",
+  "chat.ack-id",
+] as const;
 
 export function decodeClient(raw: string): ClientMessage | null {
   try {

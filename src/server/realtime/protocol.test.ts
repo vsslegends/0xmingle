@@ -118,5 +118,8 @@ describe("protocol", () => {
     // delivery acks echo the sender's message id so the UI can tick Sent → Delivered
     expect(JSON.parse(encode({ t: "chat.ack", p: { sid: "s1", at: 1, id: "m1" } })))
       .toMatchObject({ v: 1, t: "chat.ack", p: { id: "m1" } });
+    // capability handshake on connect
+    expect(JSON.parse(encode({ t: "hello", p: { caps: ["chat.edit"] } })))
+      .toMatchObject({ v: 1, t: "hello" });
   });
 });

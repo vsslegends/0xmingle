@@ -116,6 +116,12 @@ export function SessionView({ mm }: { mm: Matchmaking }) {
             <BlockButton onBlock={mm.block} />
           </div>
         </div>
+        {mm.relayLegacy ? (
+          <p className="rounded-xl border border-amber-300/30 bg-amber-300/10 px-3 py-2 text-xs text-amber-100" role="alert">
+            Realtime relay is outdated — replies, edits, deletes and Seen ticks won&apos;t reach the stranger until the
+            gateway is redeployed. Messages still work.
+          </p>
+        ) : null}
         {outgoing?.status === "pending" ? (
           <p className="text-xs text-slate-400" role="status">Tip request sent — waiting for the stranger…</p>
         ) : null}

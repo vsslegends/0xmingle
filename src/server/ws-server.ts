@@ -8,7 +8,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import { SESSION_COOKIE, readSessionToken, verifyWsTicket } from "@/server/auth";
 import { Matchmaker, type Mode } from "@/server/realtime/matcher";
 import { createPresenceStore } from "@/server/realtime/store";
-import { decodeClient, encode, type ServerMessage } from "@/server/realtime/protocol";
+import { decodeClient, encode, RELAY_CAPS, type ServerMessage } from "@/server/realtime/protocol";
 import { shortAddress, strangerLabel } from "@/lib/utils";
 
 const PORT = Number(process.env.PORT ?? process.env.WS_PORT ?? 3001);
@@ -167,6 +167,9 @@ wss.on("connection", (ws: WebSocket, req) => {
     };
     conns.set(conn.id, conn);
     void presence.setOnline(address, conn.id);
+    // Capability handshake: lets the web app detect a stale gateway
+    // (edits/reads/Seen silently fail against relays that predate them).
+    send(conn, { t: "hello", p: { caps: [...RELAY_CAPS] } });
 
     ws.on("pong", () => {
       if (conn) conn.alive = true;

@@ -68,6 +68,10 @@ export function useMatchmaking() {
   const [peerLastReadId, setPeerLastReadId] = React.useState<string | null>(null);
   // Per-message delivery: gateway acks each relayed text/file with its id.
   const [delivered, setDelivered] = React.useState<Record<string, true>>({});
+  // Relay freshness: new gateways say hello with caps on connect. A socket
+  // that stays open without hello is a stale (pre-chat-depth) gateway —
+  // edits/deletes/reads/Seen will silently fail against it.
+  const [relay, setRelay] = React.useState<"unknown" | "ready" | "legacy">("unknown");
   // Ref mirror: toggleReaction must decide on/off synchronously before send.
   const reactionsRef = React.useRef<ReactionMap>({});
   const applyReactions = React.useCallback(
@@ -205,6 +209,11 @@ export function useMatchmaking() {
         if (typeof id !== "string" || !id) return;
         setDelivered((d) => (d[id] ? d : { ...d, [id]: true }));
       }),
+      client.on("hello", (p) => {
+        const { caps } = p as { caps?: unknown };
+        if (Array.isArray(caps) && caps.includes("chat.edit")) setRelay("ready");
+        else setRelay("legacy");
+      }),
       client.on("error", (p) => {
         setError((p as { message: string }).message ?? "Something went wrong.");
       }),
@@ -244,6 +253,20 @@ export function useMatchmaking() {
       clearTipTimer();
     };
   }, [clearTipTimer, resetTips, applyReactions]);
+
+  // Stale-gateway detector: a fresh relay says hello immediately on connect.
+  // No hello within 3s of open ⇒ legacy relay, chat-depth frames won't deliver.
+  React.useEffect(() => {
+    if (status !== "open") {
+      if (status === "closed" || status === "idle") setRelay("unknown");
+      return;
+    }
+    setRelay("unknown");
+    const t = window.setTimeout(() => {
+      setRelay((r) => (r === "unknown" ? "legacy" : r));
+    }, 3000);
+    return () => window.clearTimeout(t);
+  }, [status]);
 
   const find = React.useCallback((opts: JoinOpts) => {
     lastJoin.current = opts;
@@ -382,7 +405,7 @@ export function useMatchmaking() {
     clientRef.current?.send("chat.read", { lastId });
   }, []);
 
-  return { status, state, messages, peerTyping, error, find, stop, next, sendText, sendFile, setTyping, block, report, rtcSend, onRtc, tipIncoming, tipOutgoing, requestTip, respondTip, dismissTips, reactions, toggleReaction, editMessage, deleteMessage, markRead, peerLastReadId, delivered };
+  return { status, state, messages, peerTyping, error, find, stop, next, sendText, sendFile, setTyping, block, report, rtcSend, onRtc, tipIncoming, tipOutgoing, requestTip, respondTip, dismissTips, reactions, toggleReaction, editMessage, deleteMessage, markRead, peerLastReadId, delivered, relayLegacy: relay === "legacy" };
 }
 
 export type Matchmaking = ReturnType<typeof useMatchmaking>;

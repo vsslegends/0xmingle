@@ -588,3 +588,10 @@ setInterval(() => {
 }, 60_000);
 
 console.log(`[ws] realtime gateway on :${PORT} (ALLOW_GUEST_WS=${ALLOW_GUEST ? "1 — dev only" : "0"})`);
+if (ALLOW_GUEST && process.env.NODE_ENV === "production") {
+  console.error("[ws] FATAL: ALLOW_GUEST_WS=1 is set in production. Refusing to start.");
+  process.exit(1);
+}
+if (!process.env.REDIS_URL) {
+  console.warn("[ws] WARN: REDIS_URL is not set — in-memory presence/matchmaking (single-instance only). Cap replicas at 1 or set REDIS_URL.");
+}

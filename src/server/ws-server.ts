@@ -5,11 +5,38 @@
  * Messages are relayed ephemerally — never stored, never logged.
  */
 import { WebSocketServer, WebSocket } from "ws";
+import { createServer } from "node:http";
+import { loadEnvFiles } from "@/server/env";
+
+// Standalone process: load .env.local (Next.js does this for the web app,
+// tsx does not). Must run before any SESSION_SECRET access.
+loadEnvFiles();
+
+if (!process.env.SESSION_SECRET) {
+  console.error(
+    "[ws] FATAL: SESSION_SECRET is not set. Copy .env.example to .env.local " +
+      "— the gateway cannot verify sessions or tickets without it.",
+  );
+  process.exit(1);
+}
+
 import { SESSION_COOKIE, readSessionToken, verifyWsTicket } from "@/server/auth";
 import { Matchmaker, type Mode } from "@/server/realtime/matcher";
 import { createPresenceStore } from "@/server/realtime/store";
 import { decodeClient, encode, RELAY_CAPS, type ServerMessage } from "@/server/realtime/protocol";
+import {
+  chatLimitFor,
+  getLevel,
+  isConnectRestricted,
+  recordReport,
+  seedLevel,
+} from "@/server/moderation";
 import { shortAddress, strangerLabel } from "@/lib/utils";
+
+/** Raw WS frame cap — larger frames are dropped before parsing (DoS guard). */
+export const MAX_WS_RAW_BYTES = 3_000_000;
+/** Bound for relayed rtc.signal payloads (JSON-encoded length). */
+export const MAX_RTC_SIGNAL_CHARS = 8_000;
 
 const PORT = Number(process.env.PORT ?? process.env.WS_PORT ?? 3001);
 const ALLOW_GUEST = process.env.ALLOW_GUEST_WS === "1";
@@ -79,7 +106,48 @@ function checkRate(c: Conn, limit: number, windowMs: number): boolean {
   return true;
 }
 
-const wss = new WebSocketServer({ port: PORT });
+/**
+ * Risk-aware chat budget. SUSPICIOUS senders get half the normal budget;
+ * RATE_LIMITED senders are rejected (they can still NEXT/leave).
+ */
+function chatAllowed(c: Conn): boolean {
+  const limit = chatLimitFor(getLevel(c.address));
+  if (limit <= 0) return false;
+  return checkRate(c, limit, 10_000);
+}
+
+const wss = new WebSocketServer({ noServer: true });
+
+/** Aggregate-only health for the landing page (no identities, no contents). */
+const httpServer = createServer((req, res) => {
+  if ((req.url ?? "/").split("?")[0] === "/health") {
+    res.writeHead(200, {
+      "content-type": "application/json",
+      "access-control-allow-origin": "*",
+      "cache-control": "no-store",
+    });
+    res.end(
+      JSON.stringify({
+        ok: true,
+        online: conns.size,
+        queue: matchmaker.queueSize,
+        sessions: matchmaker.activeSessions,
+        matches: metrics.matches,
+      }),
+    );
+    return;
+  }
+  res.writeHead(404);
+  res.end();
+});
+
+httpServer.on("upgrade", (req, socket, head) => {
+  wss.handleUpgrade(req, socket, head, (ws) => {
+    wss.emit("connection", ws, req);
+  });
+});
+
+httpServer.listen(PORT);
 
 wss.on("connection", (ws: WebSocket, req) => {
   // Attach the frame handler synchronously: a client may send its first
@@ -99,6 +167,10 @@ wss.on("connection", (ws: WebSocket, req) => {
   };
   ws.on("message", (data) => {
     const raw = String(data);
+    if (Buffer.byteLength(raw, "utf8") > MAX_WS_RAW_BYTES) {
+      if (conn) send(conn, { t: "error", p: { code: "TOO_LARGE", message: "Message too large." } });
+      return;
+    }
     if (!conn) {
       if (pending.length < 20) pending.push(raw);
       return;
@@ -151,6 +223,7 @@ wss.on("connection", (ws: WebSocket, req) => {
       ws.close(4403, "restricted");
       return;
     }
+    seedLevel(address, risk);
 
     conn = {
       id: `c_${++connSeq}_${Date.now().toString(36)}`,
@@ -181,7 +254,17 @@ wss.on("connection", (ws: WebSocket, req) => {
 function handle(conn: Conn, t: string, p: unknown): void {
   switch (t) {
     case "q.join": {
-      const { mode, identity, interests } = p as Conn;
+      // Defense in depth: risk may have escalated mid-connection.
+      const level = getLevel(conn.address);
+      if (isConnectRestricted(level)) {
+        conn.ws.close(4403, "restricted");
+        return;
+      }
+      if (level === "RATE_LIMITED") {
+        send(conn, { t: "error", p: { code: "RATE_LIMITED", message: "Too many reports against this wallet. Slow down." } });
+        return;
+      }
+      const { mode, identity, interests, auto } = p as Conn & { auto?: unknown };
       const now = Date.now();
       conn.sessionsStarted = conn.sessionsStarted.filter((x) => now - x < 5 * 60 * 1000);
       if (conn.sessionsStarted.length >= 20) {
@@ -199,9 +282,12 @@ function handle(conn: Conn, t: string, p: unknown): void {
         identity,
         interests,
         joinedAt: now,
+        // Auto re-find after a peer vanished: someone new, never the same one.
+        strictRecent: auto === true,
       });
       if (!session) {
-        send(conn, { t: "q.searching" });
+        const position = matchmaker.positionOf(conn.id) ?? undefined;
+        send(conn, { t: "q.searching", p: position === undefined ? undefined : { position } });
         return;
       }
       metrics.matches += 1;
@@ -226,7 +312,7 @@ function handle(conn: Conn, t: string, p: unknown): void {
         send(conn, { t: "error", p: { code: "NO_SESSION", message: "No active conversation." } });
         return;
       }
-      if (!checkRate(conn, 10, 10_000)) {
+      if (!chatAllowed(conn)) {
         send(conn, { t: "error", p: { code: "RATE_LIMITED", message: "Messaging too fast. Slow down." } });
         return;
       }
@@ -254,6 +340,11 @@ function handle(conn: Conn, t: string, p: unknown): void {
         return;
       }
       // Heavier payloads: stricter rate limit. Contents never stored or logged.
+      // RATE_LIMITED wallets cannot send files at all.
+      if (chatLimitFor(getLevel(conn.address)) <= 0) {
+        send(conn, { t: "error", p: { code: "RATE_LIMITED", message: "Restricted. Slow down." } });
+        return;
+      }
       const now = Date.now();
       conn.fileAt = conn.fileAt.filter((t) => now - t < 30_000);
       if (conn.fileAt.length >= 3) {
@@ -277,7 +368,7 @@ function handle(conn: Conn, t: string, p: unknown): void {
         send(conn, { t: "error", p: { code: "NO_SESSION", message: "No active conversation." } });
         return;
       }
-      if (!checkRate(conn, 10, 10_000)) {
+      if (!chatAllowed(conn)) {
         send(conn, { t: "error", p: { code: "RATE_LIMITED", message: "Reacting too fast. Slow down." } });
         return;
       }
@@ -294,7 +385,7 @@ function handle(conn: Conn, t: string, p: unknown): void {
         send(conn, { t: "error", p: { code: "NO_SESSION", message: "No active conversation." } });
         return;
       }
-      if (!checkRate(conn, 10, 10_000)) {
+      if (!chatAllowed(conn)) {
         send(conn, { t: "error", p: { code: "RATE_LIMITED", message: "Editing too fast. Slow down." } });
         return;
       }
@@ -312,7 +403,7 @@ function handle(conn: Conn, t: string, p: unknown): void {
         send(conn, { t: "error", p: { code: "NO_SESSION", message: "No active conversation." } });
         return;
       }
-      if (!checkRate(conn, 10, 10_000)) {
+      if (!chatAllowed(conn)) {
         send(conn, { t: "error", p: { code: "RATE_LIMITED", message: "Deleting too fast. Slow down." } });
         return;
       }
@@ -326,7 +417,7 @@ function handle(conn: Conn, t: string, p: unknown): void {
     case "chat.read": {
       const session = matchmaker.sessionOf(conn.id);
       if (!session) return;
-      if (!checkRate(conn, 10, 10_000)) return;
+      if (!chatAllowed(conn)) return;
       const { lastId } = p as { lastId?: unknown };
       const peer = conns.get(matchmaker.peerOf(conn.id) ?? "");
       if (peer) {
@@ -337,6 +428,13 @@ function handle(conn: Conn, t: string, p: unknown): void {
     case "rtc.signal": {
       const session = matchmaker.sessionOf(conn.id);
       if (!session) return;
+      // Bound relayed SDP/ICE payloads (DoS guard); oversized frames are dropped.
+      try {
+        const encoded = JSON.stringify((p as { data: unknown }).data);
+        if (encoded.length > MAX_RTC_SIGNAL_CHARS) return;
+      } catch {
+        return;
+      }
       const peer = conns.get(matchmaker.peerOf(conn.id) ?? "");
       if (peer) send(peer, { t: "rtc.signal", p: { sid: session.id, data: (p as { data: unknown }).data } });
       return;
@@ -412,7 +510,8 @@ function handle(conn: Conn, t: string, p: unknown): void {
           strictRecent: true,
         });
         if (!matched) {
-          send(conn, { t: "q.searching" });
+          const position = matchmaker.positionOf(conn.id) ?? undefined;
+          send(conn, { t: "q.searching", p: position === undefined ? undefined : { position } });
         } else {
           metrics.matches += 1;
           const peer = conns.get(matched.a === conn.id ? matched.b : matched.a);
@@ -444,12 +543,23 @@ function handle(conn: Conn, t: string, p: unknown): void {
     case "peer.report": {
       const session = matchmaker.sessionOf(conn.id);
       metrics.reports += 1;
-      // Phase 6 persists to moderation_events. Log addresses only, never contents.
+      // Escalate the reported wallet: strikes → SUSPICIOUS → RATE_LIMITED →
+      // TEMP_BLOCKED → BANNED. Log category + sid only, never contents.
       console.log(`[report] ${(p as { category: string }).category} sid=${session?.id ?? "none"}`);
       if (session) {
-        const peer = conns.get(session.a === conn.id ? session.b : session.a);
+        const peerId = session.a === conn.id ? session.b : session.a;
+        const peer = conns.get(peerId);
+        const peerAddr = session.addrA === conn.address ? session.addrB : session.addrA;
+        const level = recordReport(peerAddr);
+        void presence.setRisk(peerAddr, level);
         matchmaker.end(conn.id, "REPORTED");
-        if (peer) send(peer, { t: "session.ended", p: { sid: session.id, reason: "peer-left" } });
+        if (peer) {
+          if (isConnectRestricted(level)) {
+            peer.ws.close(4403, "restricted");
+          } else {
+            send(peer, { t: "session.ended", p: { sid: session.id, reason: "peer-left" } });
+          }
+        }
         send(conn, { t: "session.ended", p: { sid: session.id, reason: "reported" } });
       }
       return;

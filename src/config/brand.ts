@@ -4,6 +4,8 @@ export const brand = {
   domain: "0xmingle.xyz",
   url: "https://0xmingle.xyz",
   tagline: "Talk to someone you were never supposed to meet.",
+  /** Substring of tagline rendered with gradient emphasis (must match exactly). */
+  taglineAccent: "never supposed to meet.",
   subhead:
     "Random conversations. Wallet-native identity. No follower counts required.",
   ctaPrimary: "Connect Wallet",

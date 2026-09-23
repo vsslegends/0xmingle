@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Compass, Home, Shuffle, User } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useMatchmaking } from "@/hooks/useMatchmaking";
 
 const items = [
   { href: "/", label: "Home", icon: Home },
@@ -15,6 +16,8 @@ const items = [
 /** Mobile bottom navigation. Desktop uses SiteHeader. */
 export function BottomNav() {
   const path = usePathname();
+  const { state } = useMatchmaking();
+  const live = state.kind === "connected";
   return (
     <nav
       aria-label="Mobile"
@@ -27,11 +30,16 @@ export function BottomNav() {
             href={it.href}
             aria-current={path === it.href ? "page" : undefined}
             className={cn(
-              "flex flex-col items-center gap-1 py-2.5 text-[11px] text-slate-400",
+              "relative flex flex-col items-center gap-1 py-2.5 text-[11px] text-slate-400",
               path === it.href && "text-white",
             )}
           >
-            <it.icon size={20} />
+            <span className="relative">
+              <it.icon size={20} />
+              {live && it.href === "/chat" ? (
+                <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full border-2 border-[#090a12] bg-emerald-400" aria-label="Live chat" role="img" />
+              ) : null}
+            </span>
             {it.label}
           </Link>
         ))}

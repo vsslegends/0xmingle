@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useDisconnect } from "wagmi";
-import { LogOut } from "lucide-react";
+import { LogOut, Ghost } from "lucide-react";
 import { Card, CardBody } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -76,12 +76,22 @@ export default function ProfilePage() {
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-10 sm:px-6">
-      <div className="flex items-center gap-3">
-        <h1 className="text-2xl font-bold">
-          {form.username ? `@${form.username}` : shortAddress(session.address ?? "")}
-        </h1>
-        <TrustBadge tier="new" />
-        <span className="ml-auto">
+      <div className="flex items-center gap-4">
+        <span className="relative shrink-0" aria-hidden>
+          <span className="absolute -inset-1 rounded-2xl border border-dashed border-cyan-300/30 animate-spin-slower" />
+          <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-400 via-fuchsia-500 to-cyan-400 text-black shadow-xl shadow-violet-900/40">
+            <span aria-hidden className="absolute inset-0 rounded-2xl bg-gradient-to-b from-white/30 to-transparent" />
+            <Ghost size={26} strokeWidth={2.25} className="relative" />
+          </span>
+        </span>
+        <div className="min-w-0">
+          <h1 className="truncate text-2xl font-bold">
+            {form.username ? <><span className="text-gradient">@{form.username}</span></> : shortAddress(session.address ?? "")}
+          </h1>
+          <p className="mt-0.5 font-mono2 text-xs text-slate-500">{shortAddress(session.address ?? "")} · {profile ? `${profile.conversations} conversations · ${profile.peopleMet} people met` : loading ? "Loading…" : "New here — say hi to a stranger."}</p>
+        </div>
+        <span className="ml-auto flex items-center gap-2">
+          <TrustBadge tier="new" />
           <Button
             variant="ghost"
             size="sm"
@@ -95,7 +105,6 @@ export default function ProfilePage() {
           </Button>
         </span>
       </div>
-      <p className="mt-1 text-sm text-slate-500">{shortAddress(session.address ?? "")} · {profile ? `${profile.conversations} conversations · ${profile.peopleMet} people met` : loading ? "Loading…" : "New here — say hi to a stranger."}</p>
 
       <Card className="mt-4">
         <CardBody className="space-y-4">

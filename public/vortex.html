@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Vortex</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  canvas { display: block; width: 100%; height: 100%; }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.143.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.143.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<canvas id="scene"></canvas>
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { GammaCorrectionShader } from 'three/addons/shaders/GammaCorrectionShader.js';
+import { CopyShader } from 'three/addons/shaders/CopyShader.js';
+
+/* Fixed parameters — override block (do not substitute). */
+const CONFIG = {
+  filaments: 150,
+  perFilament: 460,
+  coreRadius: 0.81,
+  maxRadius: 25.5,
+  radialExpo: 1.6,
+  swirl: -0.18,
+  spread: 0.77,
+  depth: 4.35,
+  curlAmp: 4.65,
+  curlScale: 0.215,
+  curlGrow: 1.2,
+  flowSpeed: 0.21,
+  streamSpeed: 4.8,
+  pulseFreq: 8,
+  coreFall: 0.09,
+  twinkleSpeed: 2.65,
+  flipSpeed: 8,
+  glyphMix: 0.68,
+  pointSize: 6,
+  coreBoost: 5.5,
+  brightness: 2.3,
+  saturation: 0.56,
+  digitSharp: 1.9,
+  haloAmt: 0.8,
+  haloFalloff: 1,
+  coreColor: '#141a25',
+  strandColor: '#202c40',
+  sparkColor: '#2c3d5b',
+  coreGlow: 0.35,
+  coreSize: 3.7,
+  coreSpikes: 1.02,
+  autoSpin: -0.24,
+  tilt: 0.58,
+  parallax: 0.6,
+  opacity: 1,
+  bgColor: '#384d77',
+  bgColor2: '#425c93',
+  coreBg: '#4f6bae',
+  flameColor: '#6b81b9',
+  flameColor2: '#8797c4',
+  flameAmt: 0.75,
+  starCount: 320,
+  starColor: '#a2aed0',
+  starSize: 4.2,
+  starTwinkle: 4.65,
+  atmoColor: '#bdc5dc',
+  atmoCount: 160,
+  atmoSize: 12,
+  atmoSpeed: 2.65,
+};
+
+const LAYERS = { NONE: 0, TORUS_SCENE: 1, BLOOM_SCENE: 2, ENTIRE_SCENE: 3 };
+
+function hexToVec3(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  return new THREE.Vector3(((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255);
+}
+const Lerp = (a, b, t) => a + (b - a) * t;
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+const REDUCED = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+const canvas = document.getElementById('scene');
+const renderer = new THREE.WebGL1Renderer({ canvas, antialias: true });
+const DPR = () => window.devicePixelRatio || 1;
+renderer.setPixelRatio(DPR());
+renderer.setSize(window.innerWidth, window.innerHeight, false);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.VSMShadowMap;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x000000);
+scene.fog = null;
+
+const camera = new THREE.PerspectiveCamera(52, window.innerWidth / window.innerHeight, 0.1, 240);
+camera.position.set(0, 0, 17);
+scene.add(camera);
+camera.layers.enable(LAYERS.TORUS_SCENE);
+camera.layers.enable(LAYERS.BLOOM_SCENE);
+camera.layers.enable(LAYERS.ENTIRE_SCENE);
+
+/* ---------------- Geometry ---------------- */
+
+function buildFilaments(filaments, perFilament) {
+  const N = filaments * perFilament;
+  const pos = new Float32Array(N * 3); // dummy — real position computed in the shader
+  const aAngle = new Float32Array(N);
+  const aFil = new Float32Array(N);
+  const aS = new Float32Array(N);
+  const aSeed = new Float32Array(N);
+  const aGlyph = new Float32Array(N);
+  let k = 0;
+  for (let f = 0; f < filaments; f++) {
+    const ang = Math.random() * Math.PI * 2; // random base angle → organic clumps & gaps
+    const filSeed = Math.random();
+    for (let p = 0; p < perFilament; p++) {
+      aAngle[k] = ang;
+      aFil[k] = filSeed;
+      aS[k] = perFilament > 1 ? p / (perFilament - 1) : 0;
+      aSeed[k] = Math.random();
+      aGlyph[k] = Math.random();
+      k++;
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('aAngle', new THREE.Float32BufferAttribute(aAngle, 1));
+  g.setAttribute('aFil', new THREE.Float32BufferAttribute(aFil, 1));
+  g.setAttribute('aS', new THREE.Float32BufferAttribute(aS, 1));
+  g.setAttribute('aSeed', new THREE.Float32BufferAttribute(aSeed, 1));
+  g.setAttribute('aGlyph', new THREE.Float32BufferAttribute(aGlyph, 1));
+  return g;
+}
+
+function makeGlyphTexture() {
+  const S = 128;
+  const cv = document.createElement('canvas'); cv.width = S * 2; cv.height = S;
+  const c = cv.getContext('2d');
+  c.clearRect(0, 0, S * 2, S);
+  c.fillStyle = '#fff'; c.textAlign = 'center'; c.textBaseline = 'middle';
+  c.font = 'bold ' + Math.floor(S * 0.82) + 'px ui-monospace, Menlo, monospace';
+  c.fillText('0', S * 0.5, S * 0.54);
+  c.fillText('1', S * 1.5, S * 0.54);
+  const tex = new THREE.CanvasTexture(cv);
+  tex.minFilter = THREE.LinearFilter; tex.magFilter = THREE.LinearFilter;
+  return tex;
+}
+
+/* ---------------- Materials ---------------- */
+
+const filamentsCount = Math.round(CONFIG.filaments);
+const perFilamentCount = Math.round(CONFIG.perFilament);
+const pulseFreq = Math.round(CONFIG.pulseFreq);
+
+const filGeo = buildFilaments(filamentsCount, perFilamentCount);
+const glyphTex = makeGlyphTexture();
+
+const filMat = new THREE.ShaderMaterial({
+  transparent: true,
+  depthTest: false,
+  depthWrite: false,
+  toneMapped: false,
+  blending: THREE.AdditiveBlending,
+  uniforms: {
+    iTime: { value: 0 },
+    uAlpha: { value: 0 },
+    uRes: { value: new THREE.Vector2(window.innerWidth * DPR(), window.innerHeight * DPR()) },
+    uGlyphTex: { value: glyphTex },
+    uCoreR: { value: CONFIG.coreRadius },
+    uMaxR: { value: CONFIG.maxRadius },
+    uExpo: { value: CONFIG.radialExpo },
+    uSwirl: { value: CONFIG.swirl },
+    uSpread: { value: CONFIG.spread },
+    uDepth: { value: CONFIG.depth },
+    uCurlAmp: { value: CONFIG.curlAmp },
+    uCurlScale: { value: CONFIG.curlScale },
+    uCurlGrow: { value: CONFIG.curlGrow },
+    uFlowSpeed: { value: CONFIG.flowSpeed },
+    uStreamSpeed: { value: CONFIG.streamSpeed },
+    uPulseFreq: { value: pulseFreq },
+    uCoreFall: { value: CONFIG.coreFall },
+    uTwinkle: { value: CONFIG.twinkleSpeed },
+    uFlipSpeed: { value: CONFIG.flipSpeed },
+    uGlyphMix: { value: CONFIG.glyphMix },
+    uSize: { value: CONFIG.pointSize },
+    uCoreBoost: { value: CONFIG.coreBoost },
+    uBright: { value: CONFIG.brightness },
+    uSat: { value: CONFIG.saturation },
+    uDigitSharp: { value: CONFIG.digitSharp },
+    uHaloAmt: { value: CONFIG.haloAmt },
+    uHaloFall: { value: CONFIG.haloFalloff },
+    uCore: { value: hexToVec3(CONFIG.coreColor) },
+    uStrand: { value: hexToVec3(CONFIG.strandColor) },
+    uSpark: { value: hexToVec3(CONFIG.sparkColor) },
+  },
+  vertexShader: `
+attribute float aAngle; attribute float aFil; attribute float aS; attribute float aSeed; attribute float aGlyph;
+uniform float iTime, uAlpha;
+uniform vec2 uRes;
+uniform float uCoreR, uMaxR, uExpo, uSwirl, uSpread, uDepth, uCurlAmp, uCurlScale, uCurlGrow, uFlowSpeed;
+uniform float uStreamSpeed, uPulseFreq, uCoreFall, uTwinkle, uFlipSpeed, uGlyphMix, uSize, uCoreBoost, uBright, uSat;
+uniform vec3 uCore, uStrand, uSpark;
+varying vec3 vCol; varying float vBright; varying float vGlyph; varying float vDigit;
+#define TAU 6.2831853
+
+// smooth feedback domain-warp — coherent in position, so neighbouring
+// points on a strand braid into one continuous waving filament.
+vec3 flow(vec3 p, float t){
+  vec3 q = p;
+  q.x += 0.9 * sin(t + 1.7 * p.y);
+  q.y += 0.9 * cos(t + 1.7 * p.z);
+  q.z += 0.9 * sin(t + 1.7 * p.x);
+  q.x += 0.5 * cos(t * 1.3 + 2.9 * q.z);
+  q.z += 0.5 * sin(t * 1.1 + 2.9 * q.y);
+  return q - p;
+}
+float hash(float n){ return fract(sin(n) * 43758.5453123); }
+
+void main(){
+  float s = aS;                                            // 0 (core) .. 1 (rim)
+  float radius = uCoreR + (uMaxR - uCoreR) * pow(s, uExpo);
+
+  // spiral twist that grows outward + organic per-strand wander
+  float ang = aAngle + uSwirl * radius * (0.6 + 0.4 * aFil);
+  ang += sin(s * 6.0 + aFil * 30.0) * uSpread * (0.25 + 0.75 * s);
+
+  vec3 dir = vec3(cos(ang), sin(ang), 0.0);
+  vec3 pos = dir * radius;
+  pos.z = (aFil - 0.5) * uDepth * (0.4 + radius * 0.12);
+
+  // coherent curl that braids the strands and grows toward the rim
+  vec3 fp = pos * uCurlScale + vec3(0.0, 0.0, aFil * 12.0);
+  pos += flow(fp, iTime * uFlowSpeed) * uCurlAmp * (0.18 + uCurlGrow * s);
+
+  vec4 mv = modelViewMatrix * vec4(pos, 1.0);
+
+  // brightness: hot core falloff × outward-travelling pulse × twinkle × tip fade
+  float coreGlow = exp(-radius * radius * uCoreFall);
+  float pulse = 0.5 + 0.5 * sin(TAU * uPulseFreq * s - iTime * uStreamSpeed + aFil * 6.0);
+  float tw = 0.7 + 0.3 * sin(iTime * uTwinkle + aSeed * 40.0);
+  float tip = smoothstep(1.0, 0.72, s);
+  vBright = (0.22 + 0.95 * coreGlow) * (0.45 + 0.75 * pulse) * tw * tip * uBright * uAlpha;
+
+  // colour: cool strand, a sparkle minority gets iridescent hue, core whitens
+  float hue = fract(aFil * 1.7 + s * 0.35);
+  vec3 rainbow = 0.5 + 0.5 * cos(TAU * (hue + vec3(0.0, 0.33, 0.67)));
+  vec3 spark = mix(uSpark, rainbow, uSat);
+  vec3 col = mix(uStrand, spark, step(0.72, aSeed) * (0.4 + 0.6 * uSat));
+  col = mix(col, uCore, coreGlow * 0.85);
+  vCol = col;
+
+  // animated binary glyph (flips on a per-point tick) + dot/digit split
+  float tick = floor(iTime * uFlipSpeed + aGlyph * 7.0);
+  vGlyph = step(0.5, hash(aGlyph * 91.7 + tick * 13.3));
+  vDigit = (aSeed < uGlyphMix) ? 1.0 : 0.0;
+
+  float size = uSize * (0.55 + uCoreBoost * coreGlow) * (0.7 + 0.6 * pulse);
+  gl_PointSize = clamp(size * uRes.y / 1000.0 / -mv.z, 1.0, 64.0);
+  gl_Position = projectionMatrix * mv;
+}
+`,
+  fragmentShader: `
+uniform sampler2D uGlyphTex;
+uniform float uDigitSharp, uHaloAmt, uHaloFall;
+varying vec3 vCol; varying float vBright; varying float vGlyph; varying float vDigit;
+void main(){
+  vec2 pc = gl_PointCoord;
+  float d = length(pc - 0.5);
+  float halo = pow(max(0.0, 1.0 - d * 2.0), uHaloFall) * uHaloAmt;   // soft round glow
+  float mask = halo;
+  if (vDigit > 0.5) {
+    vec2 guv = vec2((pc.x + vGlyph) * 0.5, pc.y);                    // pick 0 | 1 cell from the atlas
+    float g = texture2D(uGlyphTex, guv).r;
+    mask = halo * 0.45 + g * uDigitSharp;                           // crisp digit over a faint glow
+  }
+  if (mask <= 0.001) discard;
+  gl_FragColor = vec4(vCol * vBright, mask);
+}
+`,
+});
+
+const filPoints = new THREE.Points(filGeo, filMat);
+filPoints.frustumCulled = false;
+filPoints.layers.set(LAYERS.ENTIRE_SCENE);
+
+const coreMat = new THREE.ShaderMaterial({
+  transparent: true,
+  depthTest: false,
+  depthWrite: false,
+  toneMapped: false,
+  blending: THREE.AdditiveBlending,
+  uniforms: {
+    uColor: { value: hexToVec3(CONFIG.coreColor) },
+    uGlow: { value: CONFIG.coreGlow },
+    uSpikes: { value: CONFIG.coreSpikes },
+    uAlpha: { value: 0 },
+  },
+  vertexShader: `
+varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
+`,
+  fragmentShader: `
+uniform vec3 uColor; uniform float uGlow, uSpikes, uAlpha; varying vec2 vUv;
+void main(){
+  vec2 p = vUv * 2.0 - 1.0;
+  float r = length(p);
+  float core = pow(max(0.0, 1.0 - r), 3.0);
+  float halo = exp(-r * r * 3.0) * 0.7;
+  // anamorphic cross flare
+  float sx = exp(-abs(p.y) * 90.0) * exp(-abs(p.x) * 1.6);
+  float sy = exp(-abs(p.x) * 90.0) * exp(-abs(p.y) * 1.6);
+  float spikes = (sx + sy) * uSpikes;
+  float i = (core * 2.0 + halo + spikes) * uGlow;
+  gl_FragColor = vec4(uColor * i, i * uAlpha);
+}
+`,
+});
+
+const core = new THREE.Mesh(new THREE.PlaneBufferGeometry(1, 1), coreMat);
+core.scale.setScalar(CONFIG.coreSize * 2.0);
+core.layers.set(LAYERS.ENTIRE_SCENE);
+
+const group = new THREE.Group();
+group.add(filPoints);
+group.add(core);
+scene.add(group);
+
+/* Starfield — far shell behind the burst. */
+const starN = Math.round(CONFIG.starCount);
+const starPos = new Float32Array(starN * 3);
+const starSizes = new Float32Array(starN);
+const starSeeds = new Float32Array(starN);
+for (let i = 0; i < starN; i++) {
+  const u = Math.random() * 2 - 1, th = Math.random() * Math.PI * 2, rr = Math.sqrt(1 - u * u);
+  const R = 60 + Math.random() * 30;
+  starPos[i * 3] = rr * Math.cos(th) * R;
+  starPos[i * 3 + 1] = rr * Math.sin(th) * R;
+  starPos[i * 3 + 2] = -Math.abs(u * R) - 20; // behind the singularity
+  starSizes[i] = CONFIG.starSize * (0.5 + Math.random());
+  starSeeds[i] = Math.random();
+}
+const starGeo = new THREE.BufferGeometry();
+starGeo.setAttribute('position', new THREE.Float32BufferAttribute(starPos, 3));
+starGeo.setAttribute('size', new THREE.Float32BufferAttribute(starSizes, 1));
+starGeo.setAttribute('seed', new THREE.Float32BufferAttribute(starSeeds, 1));
+const starMat = new THREE.ShaderMaterial({
+  transparent: true,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+  depthTest: false,
+  uniforms: {
+    uTime: { value: 0 },
+    uColor: { value: hexToVec3(CONFIG.starColor) },
+    uTwinkle: { value: CONFIG.starTwinkle },
+    uRes: { value: new THREE.Vector2(window.innerWidth * DPR(), window.innerHeight * DPR()) },
+  },
+  vertexShader: `
+attribute float size; attribute float seed; uniform float uTime, uTwinkle; uniform vec2 uRes; varying float vA;
+void main(){
+  vec4 mv = modelViewMatrix * vec4(position, 1.0);
+  vA = 0.4 + 0.6 * (0.5 + 0.5 * sin(uTime * uTwinkle + seed * 60.0));
+  gl_PointSize = max(1.0, size * uRes.y / 900.0 / -mv.z);
+  gl_Position = projectionMatrix * mv;
+}
+`,
+  fragmentShader: `
+uniform vec3 uColor; varying float vA;
+void main(){ vec2 p = gl_PointCoord - 0.5; float l = length(p); if (l > 0.5) discard;
+  float tex = smoothstep(0.5, 0.0, l); gl_FragColor = vec4(uColor * tex, tex * vA * 0.7); }
+`,
+});
+const stars = new THREE.Points(starGeo, starMat);
+stars.frustumCulled = false;
+stars.layers.set(LAYERS.ENTIRE_SCENE);
+stars.onBeforeRender = () => {
+  starMat.uniforms.uTime.value = performance.now() / 1000;
+};
+scene.add(stars);
+
+/* Ambient motes — camera-attached drift in front. */
+const atmoN = Math.round(CONFIG.atmoCount);
+const atmoPos = new Float32Array(atmoN * 3);
+const atmoSizes = new Float32Array(atmoN);
+const atmoSeeds = new Float32Array(atmoN);
+for (let i = 0; i < atmoN; i++) {
+  atmoPos[i * 3] = 2 * Math.random() - 1;
+  atmoPos[i * 3 + 1] = 2 * Math.random() - 1;
+  atmoPos[i * 3 + 2] = 2 * Math.random() - 1;
+  atmoSizes[i] = CONFIG.atmoSize * (0.4 + Math.random());
+  atmoSeeds[i] = Math.random();
+}
+const atmoGeo = new THREE.BufferGeometry();
+atmoGeo.setAttribute('position', new THREE.Float32BufferAttribute(atmoPos, 3));
+atmoGeo.setAttribute('size', new THREE.Float32BufferAttribute(atmoSizes, 1));
+atmoGeo.setAttribute('seed', new THREE.Float32BufferAttribute(atmoSeeds, 1));
+const atmoMat = new THREE.ShaderMaterial({
+  transparent: true,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+  depthTest: false,
+  uniforms: {
+    uTime: { value: 0 },
+    uColor: { value: hexToVec3(CONFIG.atmoColor) },
+    uRes: { value: new THREE.Vector2(window.innerWidth * DPR(), window.innerHeight * DPR()) },
+  },
+  vertexShader: `
+attribute float size; attribute float seed; uniform float uTime; uniform vec2 uRes;
+varying float vA;
+vec3 warp(vec3 p, float t){ float c=0.9,a=1.9,b=0.02,s=0.05; p*=2.;
+  p.x+=c*sin(s*t+a*p.y)+t*b; p.y+=c*cos(s*t+a*p.x); p.y+=c*sin(s*t+a*p.z)+t*b;
+  p.z+=c*cos(s*t+a*p.y); p.z+=c*sin(s*t+a*p.x)+t*b; p.x+=c*cos(s*t+a*p.z);
+  return cos(p+vec3(1,2,4)); }
+void main(){
+  vec3 v = position*4.0 + warp(position, uTime)*1.2;
+  vec4 mv = modelViewMatrix * vec4(v, 1.0);
+  float r = length(v); float farF = 1.0 - smoothstep(5.0, 6.5, r); float nearF = smoothstep(0.0, 0.5, -mv.z);
+  vA = farF * nearF;
+  gl_PointSize = size * uRes.y / 900.0 / -mv.z; gl_PointSize = max(gl_PointSize, 1.0);
+  gl_Position = projectionMatrix * mv;
+}
+`,
+  fragmentShader: `
+uniform vec3 uColor; varying float vA;
+void main(){ vec2 p = gl_PointCoord - 0.5; float l = length(p); if (l > 0.5) discard;
+  float tex = smoothstep(0.5, 0.0, l); gl_FragColor = vec4(uColor * tex, tex * vA * 0.4); }
+`,
+});
+const motes = new THREE.Points(atmoGeo, atmoMat);
+motes.frustumCulled = false;
+motes.layers.set(LAYERS.ENTIRE_SCENE);
+scene.add(motes);
+
+/* ---------------- Composite final pass ---------------- */
+
+const FinalPass = {
+  uniforms: {
+    iTime: { value: 0 },
+    tDiffuse: { value: null },
+    torusTexture: { value: null },
+    bloomTexture: { value: null },
+    // 1×1 black plate: sampling it contributes nothing (haloTexture left unbound by design).
+    haloTexture: { value: (() => {
+      const t = new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1);
+      t.needsUpdate = true;
+      return t;
+    })() },
+    uBg: { value: hexToVec3(CONFIG.bgColor) },
+    uBg2: { value: hexToVec3(CONFIG.bgColor2) },
+    uCoreBg: { value: hexToVec3(CONFIG.coreBg) },
+    uFlameA: { value: hexToVec3(CONFIG.flameColor) },
+    uFlameB: { value: hexToVec3(CONFIG.flameColor2) },
+    uFlameAmt: { value: CONFIG.flameAmt },
+  },
+  vertexShader: `
+varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position, 1.0); }
+`,
+  fragmentShader: `
+uniform float iTime; uniform sampler2D tDiffuse; uniform sampler2D bloomTexture; uniform sampler2D torusTexture; uniform sampler2D haloTexture;
+uniform vec3 uBg; uniform vec3 uBg2; uniform vec3 uCoreBg; uniform vec3 uFlameA; uniform vec3 uFlameB; uniform float uFlameAmt;
+varying vec2 vUv;
+vec3 warp3d(vec3 pos, float t){ float curv=.8,a=1.9,b=0.7; pos*=2.;
+  pos.x+=curv*sin(t+a*pos.y)+t*b; pos.y+=curv*cos(t+a*pos.x);
+  pos.y+=curv*sin(t+a*pos.z)+t*b; pos.z+=curv*cos(t+a*pos.y);
+  pos.z+=curv*sin(t+a*pos.x)+t*b; pos.x+=curv*cos(t+a*pos.z);
+  return 0.5+0.5*cos(pos.xyz+vec3(1,2,4)); }
+void main(){
+  vec2 uv = 2.*vUv - 1.;
+  vec3 w = pow(warp3d(vec3(uv.x, sin(uv.y), uv.y), iTime*1.5), vec3(1.5));
+  vec3 flame = 1.5*uFlameA*w.x; flame*=w.y; flame += uFlameB*w.z;
+  flame *= smoothstep(0.25, 1., abs(uv.y));
+  float md = smoothstep(-0.7, 1., -uv.y*uv.x); flame *= md*md;
+  // dark radial background + faint central glow toward the core
+  float r = length(uv);
+  vec3 bg = mix(uBg2, uBg, vUv.y) * (1.0 - 0.30 * r);
+  bg += uCoreBg * exp(-r*r*2.2) * 0.6;
+  vec3 halo = texture2D(haloTexture, vUv).xyz;
+  gl_FragColor = vec4(bg + flame*uFlameAmt + texture2D(bloomTexture, vUv).xyz + texture2D(torusTexture, vUv).xyz + texture2D(tDiffuse, vUv).xyz + halo, 1.);
+}
+`,
+};
+
+/* ---------------- Composers ---------------- */
+
+const W = () => window.innerWidth;
+const H = () => window.innerHeight;
+
+const renderScene = new RenderPass(scene, camera);
+
+const torusComposer = new EffectComposer(renderer);
+torusComposer.renderToScreen = false;
+torusComposer.addPass(renderScene);
+torusComposer.addPass(new ShaderPass(GammaCorrectionShader));
+torusComposer.addPass(new UnrealBloomPass(new THREE.Vector2(W(), H()), 0.22, 0.2, 0));
+torusComposer.addPass(new ShaderPass(CopyShader));
+
+const bloomComposer = new EffectComposer(renderer);
+bloomComposer.renderToScreen = false;
+bloomComposer.addPass(renderScene);
+bloomComposer.addPass(new UnrealBloomPass(new THREE.Vector2(W(), H()), 0.4, 0.6, 0));
+bloomComposer.addPass(new ShaderPass(GammaCorrectionShader));
+
+const finalComposer = new EffectComposer(renderer);
+finalComposer.addPass(renderScene);
+const finalPass = new ShaderPass(FinalPass);
+finalComposer.addPass(finalPass);
+finalPass.uniforms.bloomTexture.value = bloomComposer.renderTarget1.texture;
+finalPass.uniforms.torusTexture.value = torusComposer.renderTarget1.texture;
+
+motes.onBeforeRender = () => {
+  atmoMat.uniforms.uTime.value = (performance.now() / 1000) * CONFIG.atmoSpeed * 8.0;
+  motes.position.copy(camera.position);
+  finalPass.uniforms.iTime.value = performance.now() / 1000;
+};
+
+/* ---------------- Interaction ---------------- */
+
+const target = { x: 0, y: 0 };
+const mouse = { x: 0, y: 0 };
+window.addEventListener('mousemove', (e) => {
+  target.x = (e.clientX / window.innerWidth) * 2 - 1;
+  target.y = -((e.clientY / window.innerHeight) * 2 - 1);
+});
+
+window.addEventListener('resize', () => {
+  const dpr = DPR();
+  const w = window.innerWidth, h = window.innerHeight;
+  renderer.setPixelRatio(dpr);
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  for (const c of [torusComposer, bloomComposer, finalComposer]) {
+    c.setPixelRatio(dpr);
+    c.setSize(w, h);
+  }
+  filMat.uniforms.uRes.value.set(w * dpr, h * dpr);
+  starMat.uniforms.uRes.value.set(w * dpr, h * dpr);
+  atmoMat.uniforms.uRes.value.set(w * dpr, h * dpr);
+});
+
+/* ---------------- Loop ---------------- */
+
+const appearStart = performance.now();
+let spin = 0;
+let prevT = performance.now() / 1000;
+
+function frame() {
+  const t = performance.now() / 1000;
+  const dt = Math.min(0.05, t - prevT);
+  prevT = t;
+
+  mouse.x = Lerp(mouse.x, target.x, 0.06);
+  mouse.y = Lerp(mouse.y, target.y, 0.06);
+
+  filMat.uniforms.iTime.value = t;
+
+  // Entrance fade (once): ~1.8s ramp after a 0.3s delay.
+  const el = performance.now() - appearStart;
+  const a = clamp((el - 300) / 1800, 0, 1) * CONFIG.opacity;
+  filMat.uniforms.uAlpha.value = a;
+  coreMat.uniforms.uAlpha.value = a;
+
+  // Slow auto-spin + cursor tilt.
+  spin += dt * CONFIG.autoSpin;
+  group.rotation.z = spin;
+  group.rotation.x = Lerp(group.rotation.x, -mouse.y * CONFIG.tilt, 0.05);
+  group.rotation.y = Lerp(group.rotation.y, mouse.x * CONFIG.tilt, 0.05);
+
+  // Billboard flare + parallax dolly.
+  core.quaternion.copy(camera.quaternion);
+  camera.position.x = Lerp(camera.position.x, mouse.x * CONFIG.parallax, 0.05);
+  camera.position.y = Lerp(camera.position.y, mouse.y * CONFIG.parallax, 0.05);
+  camera.lookAt(0, 0, 0);
+
+  camera.layers.set(LAYERS.TORUS_SCENE);
+  torusComposer.render();
+  camera.layers.set(LAYERS.BLOOM_SCENE);
+  bloomComposer.render();
+  camera.layers.set(LAYERS.ENTIRE_SCENE);
+  finalComposer.render();
+}
+
+if (REDUCED) {
+  // Reduced motion: one static frame, no loop.
+  frame();
+} else {
+  const loop = () => {
+    frame();
+    requestAnimationFrame(loop);
+  };
+  loop();
+}
+</script>
+</body>
+</html>

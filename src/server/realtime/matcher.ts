@@ -53,6 +53,12 @@ export class Matchmaker {
     return this.sessions.size;
   }
 
+  /** 1-based queue position for a connection, or null when not queued. */
+  positionOf(connId: string): number | null {
+    const i = this.queue.findIndex((q) => q.id === connId);
+    return i >= 0 ? i + 1 : null;
+  }
+
   isBlocked(a: string, b: string): boolean {
     return this.blocks.has(pairKey(a.toLowerCase(), b.toLowerCase()));
   }

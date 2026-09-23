@@ -5,6 +5,7 @@ import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
 import { BottomNav } from "@/components/BottomNav";
 import { Providers } from "@/components/providers";
+import { ChatReturnPill, MatchmakingProvider } from "@/components/matchmaking/MatchmakingProvider";
 import { brand } from "@/config/brand";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
@@ -29,12 +30,15 @@ export default function RootLayout({
           Skip to content
         </a>
         <Providers>
-          <SiteHeader />
-          <main id="main" className="flex-1 w-full pb-16 sm:pb-0">
-            {children}
-          </main>
-          <SiteFooter />
-          <BottomNav />
+          <MatchmakingProvider>
+            <SiteHeader />
+            <main id="main" className="flex-1 w-full pb-16 sm:pb-0">
+              {children}
+            </main>
+            <SiteFooter />
+            <BottomNav />
+            <ChatReturnPill />
+          </MatchmakingProvider>
         </Providers>
       </body>
     </html>

@@ -26,9 +26,15 @@ export function ChatExperience() {
           searching={mm.state.kind === "searching"}
           gated={gated}
           wsDown={wsDown}
+          position={mm.queuePosition}
           onFind={mm.find}
           onStop={mm.stop}
         />
+        {mm.notice && mm.state.kind !== "connected" ? (
+          <p role="status" className="mt-3 rounded-xl border border-cyan-300/20 bg-cyan-400/5 px-3 py-2 text-sm text-cyan-200">
+            {mm.notice}
+          </p>
+        ) : null}
         {mm.error ? (
           <p role="alert" className="mt-3 text-sm text-slate-400">
             {mm.error}{" "}

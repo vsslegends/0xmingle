@@ -4,6 +4,7 @@ import {
   createWsTicket,
   readSessionToken,
 } from "@/server/auth";
+import { clientKey, rateLimit } from "@/server/ratelimit";
 
 /**
  * Mints a short-lived WS ticket for the realtime gateway.
@@ -15,6 +16,10 @@ export async function GET(req: NextRequest) {
   const session = await readSessionToken(token);
   if (!session) {
     return NextResponse.json({ error: "Sign in first." }, { status: 401 });
+  }
+  const rl = await rateLimit(`ws-ticket:${clientKey(req, session.address)}`, 30, 60_000);
+  if (!rl.ok) {
+    return NextResponse.json({ error: "Too many requests. Try again shortly." }, { status: 429 });
   }
   const ticket = await createWsTicket(session.address);
   return NextResponse.json({ ticket });

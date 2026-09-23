@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { SESSION_COOKIE, readSessionToken } from "@/server/auth";
+import { clientKey, rateLimit } from "@/server/ratelimit";
 import { referralCode, referralLink, applyReferral, balance, award, POINTS } from "@/server/rewards/ledger";
 import { z } from "zod";
 
@@ -7,6 +8,8 @@ import { z } from "zod";
 export async function GET(req: NextRequest) {
   const session = await readSessionToken(req.cookies.get(SESSION_COOKIE)?.value);
   if (!session) return NextResponse.json({ error: "Sign in first." }, { status: 401 });
+  const rl = await rateLimit(`referral:get:${clientKey(req, session.address)}`, 30, 60_000);
+  if (!rl.ok) return NextResponse.json({ error: "Too many requests. Try again shortly." }, { status: 429 });
   const origin = new URL(req.url).origin;
   return NextResponse.json({
     code: referralCode(session.address),
@@ -19,6 +22,8 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const session = await readSessionToken(req.cookies.get(SESSION_COOKIE)?.value);
   if (!session) return NextResponse.json({ error: "Sign in first." }, { status: 401 });
+  const rl = await rateLimit(`referral:post:${clientKey(req, session.address)}`, 10, 60_000);
+  if (!rl.ok) return NextResponse.json({ error: "Too many requests. Try again shortly." }, { status: 429 });
   const body = await req.json().catch(() => null) as { referrer?: unknown } | null;
   const parsed = z.object({ referrer: z.string().regex(/^0x[0-9a-fA-F]{40}$/) }).safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: "Invalid referrer." }, { status: 400 });

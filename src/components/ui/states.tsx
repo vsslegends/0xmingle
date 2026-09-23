@@ -51,9 +51,14 @@ export function EmptyState({
   hint?: string;
 }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6 text-center">
-      <p className="font-medium text-white">{title}</p>
-      {hint ? <p className="mt-1 text-sm text-slate-400">{hint}</p> : null}
+    <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] p-6 text-center">
+      <div aria-hidden className="signal-field pointer-events-none absolute inset-0 opacity-60" />
+      <div aria-hidden className="relative mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-violet-500/30 to-cyan-400/30 text-slate-300">
+        <span className="absolute inset-0 rounded-full border border-dashed border-white/20 animate-spin-slower" />
+        <span className="text-lg">✦</span>
+      </div>
+      <p className="relative font-medium text-white">{title}</p>
+      {hint ? <p className="relative mt-1 text-sm text-slate-400">{hint}</p> : null}
     </div>
   );
 }

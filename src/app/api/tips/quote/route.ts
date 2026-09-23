@@ -1,11 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { platformTreasury, quoteTip } from "@/server/economy/fees";
+import { clientKey, rateLimit } from "@/server/ratelimit";
 
 const schema = z.object({ amountWei: z.string().regex(/^\d+$/, "wei integer expected") });
 
 /** Authoritative tip quote: amount → recipient + platform fee. */
 export async function POST(req: NextRequest) {
+  const rl = await rateLimit(`tips:quote:${clientKey(req)}`, 30, 60_000);
+  if (!rl.ok) {
+    return NextResponse.json({ error: "Too many requests. Try again shortly." }, { status: 429 });
+  }
   let body: unknown;
   try {
     body = await req.json();

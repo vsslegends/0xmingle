@@ -32,6 +32,23 @@ describe("protocol", () => {
     expect(decodeClient(JSON.stringify(huge))).toBeNull();
   });
 
+  it("accepts voice-note audio mimes in chat.file", () => {
+    const voice = {
+      t: "chat.file",
+      p: { name: "voice-note.webm", mime: "audio/webm", size: 42000, dataUrl: "data:audio/webm;base64,GkXf" },
+    };
+    expect(decodeClient(JSON.stringify(voice))).not.toBeNull();
+    const badAudio = { ...voice, p: { ...voice.p, mime: "audio/flac", dataUrl: "data:audio/flac;base64,xxx" } };
+    expect(decodeClient(JSON.stringify(badAudio))).toBeNull();
+  });
+
+  it("accepts q.join with optional auto re-find flag", () => {
+    const base = { mode: "text", identity: "anonymous", interests: [] };
+    expect(decodeClient(JSON.stringify({ t: "q.join", p: base }))).not.toBeNull();
+    expect(decodeClient(JSON.stringify({ t: "q.join", p: { ...base, auto: true } }))).not.toBeNull();
+    expect(decodeClient(JSON.stringify({ t: "q.join", p: { ...base, auto: "yes" } }))).toBeNull();
+  });
+
   it("accepts tip.request/response, rejects malformed amounts", () => {
     expect(
       decodeClient(JSON.stringify({ t: "tip.request", p: { amountWei: "1000000", display: "$1.00" } })),

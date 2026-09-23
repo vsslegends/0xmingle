@@ -139,4 +139,19 @@ describe("matchmaker", () => {
     });
     expect(matched.size % 2).toBe(0);
   });
+
+  it("reports 1-based queue positions, null when matched or absent", () => {
+    const m = new Matchmaker();
+    const W = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    // Same wallet never self-matches → everyone stays queued.
+    m.join(seeker("c1", W));
+    m.join(seeker("c2", W));
+    expect(m.positionOf("c1")).toBe(1);
+    expect(m.positionOf("c2")).toBe(2);
+    expect(m.positionOf("nobody")).toBeNull();
+    const s = m.join(seeker("c3", "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"));
+    expect(s).not.toBeNull();
+    expect(m.positionOf("c1")).toBeNull(); // matched → dequeued
+    expect(m.positionOf("c2")).toBe(1);
+  });
 });

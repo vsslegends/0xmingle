@@ -8,7 +8,8 @@ export const MAX_DIM = 1280;
 export const JPEG_QUALITY = 0.82;
 
 export const IMAGE_MIMES = ["image/png", "image/jpeg", "image/gif", "image/webp"] as const;
-export const FILE_MIMES = [...IMAGE_MIMES, "application/pdf", "text/plain"] as const;
+export const AUDIO_MIMES = ["audio/webm", "audio/mp4", "audio/ogg", "audio/mpeg"] as const;
+export const FILE_MIMES = [...IMAGE_MIMES, ...AUDIO_MIMES, "application/pdf", "text/plain"] as const;
 
 /** Server enforces the same allowlist — never trust the client. */
 export function isAllowedMime(mime: string): boolean {
@@ -17,6 +18,10 @@ export function isAllowedMime(mime: string): boolean {
 
 export function isImageMime(mime: string): boolean {
   return (IMAGE_MIMES as readonly string[]).includes(mime);
+}
+
+export function isAudioMime(mime: string): boolean {
+  return (AUDIO_MIMES as readonly string[]).includes(mime);
 }
 
 export interface PreparedFile {
@@ -60,6 +65,31 @@ function downscaleImage(dataUrl: string): Promise<string> {
     img.onerror = () => reject(new Error("Could not process image."));
     img.src = dataUrl;
   });
+}
+
+/** Validate + pack a voice-note blob for sending. Throws with UI-safe message. */
+export async function prepareAudio(blob: Blob, durationSec: number): Promise<PreparedFile> {
+  const mime = blob.type.split(";")[0].trim() || "application/octet-stream";
+  if (!isAudioMime(mime)) {
+    throw new Error("That recording format isn't supported on this device.");
+  }
+  if (!Number.isFinite(durationSec) || durationSec < 1) {
+    throw new Error("Recording is too short — hold a little longer.");
+  }
+  if (durationSec > 32) {
+    throw new Error("Voice notes cap at 30 seconds.");
+  }
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  const base64 =
+    typeof Buffer !== "undefined"
+      ? Buffer.from(bytes).toString("base64")
+      : btoa(String.fromCharCode(...bytes));
+  const dataUrl = `data:${mime};base64,${base64}`;
+  if (dataUrl.length > MAX_DATAURL_CHARS) {
+    throw new Error("Recording is too large to send.");
+  }
+  const ext = mime === "audio/mp4" ? "m4a" : mime === "audio/mpeg" ? "mp3" : mime === "audio/ogg" ? "ogg" : "webm";
+  return { name: `voice-note.${ext}`, mime, size: blob.size, dataUrl };
 }
 
 /** Validate + prepare a user-picked file for sending. Throws with UI-safe message. */

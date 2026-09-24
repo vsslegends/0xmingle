@@ -63,7 +63,17 @@ export function HeroCopy() {
         </Link>
       </motion.div>
       <motion.p variants={item} className="mt-4 text-xs text-slate-500">
-        Basic chat is free. Connecting a wallet only verifies it&apos;s yours — no transaction, no jargon.
+        Basic chat is free. Connecting a wallet only verifies it&apos;s yours — no transaction, no jargon.{" "}
+        No wallet yet?{" "}
+        <a
+          href={brand.links.getWallet}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="underline-offset-2 hover:text-slate-300 hover:underline"
+        >
+          Get {brand.links.getWalletLabel} in ~2 min
+        </a>
+        .
       </motion.p>
       <motion.div variants={item} className="mt-6 flex flex-wrap items-center gap-2" aria-label="Product facts">
         <OnlineNow />

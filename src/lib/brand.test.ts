@@ -8,6 +8,10 @@ describe("brand", () => {
     expect(brand.name.length).toBeGreaterThan(0);
     expect(brand.tagline.length).toBeGreaterThan(0);
   });
+  it("links first-time users to an official wallet download", () => {
+    expect(brand.links.getWallet.startsWith("https://")).toBe(true);
+    expect(brand.links.getWalletLabel.length).toBeGreaterThan(0);
+  });
 });
 
 describe("utils", () => {

@@ -14,9 +14,19 @@ export function redis(): IORedis | null {
   if (!url) return null;
   if (!client) {
     client = new IORedis(url, {
+      // Fail fast per command so callers degrade to in-memory fallbacks
+      // instead of hanging; the client reconnects in the background.
       maxRetriesPerRequest: 1,
       enableOfflineQueue: false,
-      lazyConnect: true,
+      // Reconnect with capped backoff (gateway is long-lived; keep trying).
+      // NOTE: previously lazyConnect:true was set here without ever calling
+      // connect() — every command threw "Connection is closed" and the app
+      // silently ran single-instance even with REDIS_URL set. Eager connect
+      // (default) dials in the background; construction never blocks.
+      retryStrategy: (times) => Math.min(times * 200, 5000),
+    });
+    client.on("ready", () => {
+      warned = false;
     });
     client.on("error", () => {
       if (!warned) {

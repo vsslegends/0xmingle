@@ -17,6 +17,9 @@ export const brand = {
     terms: "/terms",
     privacy: "/privacy",
     guidelines: "/community-guidelines",
+    /** No-wallet onboarding: official Rainbow download (iOS/Android/browser). */
+    getWallet: "https://rainbow.me/download",
+    getWalletLabel: "Rainbow",
   },
 } as const;
 
